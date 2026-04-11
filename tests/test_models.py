@@ -29,13 +29,6 @@ def test_tag_from_dict(tag_dict):
     assert tag.firmware_version == 1337
 
 
-def test_tag_from_dict_missing_fields():
-    """from_dict should not raise on a minimal dict."""
-    tag = Tag.from_dict({"mac": "001122334455"})
-    assert tag.mac == "001122334455"
-    assert tag.alias == ""
-    assert tag.hw_type == 0
-
 
 def test_apstatus_from_dict():
     sys_msg = {
@@ -50,7 +43,6 @@ def test_apstatus_from_dict():
         "dbsize": 4096,
         "littlefsfree": 8192,
         "psfree": 1024000,
-        "temp": 25.5,
         "wifistatus": 1,
         "lowbattcount": 0,
         "timeoutcount": 1,
@@ -67,10 +59,19 @@ def test_apstatus_from_dict():
     assert status.db_size == 4096
     assert status.little_fs_free == 8192
     assert status.ps_ram_free == 1024000
-    assert status.temp == 25.5
     assert status.wifi_status == 1
     assert status.low_battery_count == 0
     assert status.timeout_count == 1
+
+
+def test_apstatus_no_psram():
+    """ps_ram_free is None on boards without PSRAM."""
+    sys_msg = {
+        "currtime": 0, "heap": 0, "recordcount": 0, "apstate": 0, "runstate": 0,
+        "rssi": 0, "wifissid": "", "uptime": 0, "dbsize": 0, "littlefsfree": 0,
+        "wifistatus": 0, "lowbattcount": 0, "timeoutcount": 0,
+    }
+    assert APStatus.from_dict(sys_msg).ps_ram_free is None
 
 
 def test_tagtype_from_dict():

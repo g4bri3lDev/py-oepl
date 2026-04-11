@@ -184,54 +184,96 @@ async def _ap(host: str, output_json: bool) -> None:
             json.dumps(
                 {
                     "info": {
-                        "alias": info.alias,
-                        "env": info.env,
+                        "env": cfg.env or info.env,
                         "build_version": info.build_version,
                         "ap_version": info.ap_version,
                         "psram_size": info.psram_size,
                         "flash_size": info.flash_size,
-                        "has_ble": info.has_ble,
-                        "has_c6": info.has_c6,
+                        "can_rollback": info.can_rollback,
+                        "has_c6": cfg.has_c6,
+                        "has_h2": cfg.has_h2,
+                        "has_ble": cfg.has_ble,
+                        "has_sub_ghz": cfg.has_sub_ghz,
                     },
                     "config": {
                         "alias": cfg.alias,
                         "channel": cfg.channel,
-                        "max_sleep": cfg.max_sleep,
-                        "timezone": cfg.timezone,
+                        "subghz_channel": cfg.subghz_channel,
                         "led_brightness": cfg.led_brightness,
-                        "ble_enabled": cfg.ble_enabled,
+                        "tft_brightness": cfg.tft_brightness,
+                        "language": cfg.language,
+                        "max_sleep": cfg.max_sleep,
+                        "stop_sleep": cfg.stop_sleep,
+                        "timezone": cfg.timezone,
+                        "preview": cfg.preview,
                         "nightly_reboot": cfg.nightly_reboot,
+                        "lock": cfg.lock,
+                        "wifi_power": cfg.wifi_power,
+                        "sleep_time1": cfg.sleep_time1,
+                        "sleep_time2": cfg.sleep_time2,
+                        "ble_enabled": cfg.ble_enabled,
+                        "repo": cfg.repo,
+                        "discovery": cfg.discovery,
+                        "show_timestamp": cfg.show_timestamp,
                     },
                 }
             )
         )
         return
 
+    _WIFI_POWER: dict[int, str] = {
+        78: "19.5 dBm", 76: "19.0 dBm", 74: "18.5 dBm", 68: "17.0 dBm",
+        60: "15.0 dBm", 52: "13.0 dBm", 44: "11.0 dBm", 34: "8.5 dBm",
+        28: "7.0 dBm", 20: "5.0 dBm", 8: "2.0 dBm",
+    }
+    _LED_BRIGHT: dict[int, str] = {0: "off", 15: "10%", 31: "25%", 127: "50%", 191: "75%", 255: "100%"}
+    _TFT_BRIGHT: dict[int, str] = {0: "off", 20: "10%", 64: "25%", 128: "50%", 192: "75%", 255: "100%"}
+    _MAX_SLEEP: dict[int, str] = {0: "shortest (40 sec)", 5: "5 min", 10: "10 min", 30: "30 min", 60: "1 hour"}
+    _LANGUAGE: dict[int, str] = {
+        0: "English", 1: "Nederlands", 2: "Deutsch", 3: "Norsk", 4: "Français",
+        5: "Čeština", 6: "Slovenčina", 7: "Polski", 8: "Español",
+        9: "Svenska", 10: "Dansk", 11: "Eesti",
+    }
+
     tree = Tree(f"AP  [bold]{host}[/bold]", guide_style="cyan dim")
 
     hw = tree.add("[bold]Hardware[/bold]")
-    hw.add(f"Env         {info.env or '—'}")
+    hw.add(f"Env         {cfg.env or info.env or '—'}")
     hw.add(f"Version     {info.build_version or info.ap_version or '—'}")
     hw.add(f"PSRAM       {info.psram_size // 1024 // 1024} MB" if info.psram_size else "PSRAM       —")
     hw.add(f"Flash       {info.flash_size // 1024 // 1024} MB" if info.flash_size else "Flash       —")
-    flags = []
-    if info.has_ble:
-        flags.append("BLE")
-    if info.has_c6:
-        flags.append("C6")
-    if info.has_h2:
-        flags.append("H2")
-    if flags:
-        hw.add(f"Features    {', '.join(flags)}")
+    hw.add(f"Rollback    {'[green]yes[/green]' if info.can_rollback else '[dim]no[/dim]'}")
+    caps = [name for flag, name in [(cfg.has_c6, "C6"), (cfg.has_h2, "H2"), (cfg.has_ble, "BLE"), (cfg.has_sub_ghz, "SubGHz")] if flag]
+    if caps:
+        hw.add(f"Features    {', '.join(caps)}")
 
-    conf = tree.add("[bold]Config[/bold]")
-    conf.add(f"Alias       {cfg.alias or '—'}")
-    conf.add(f"Channel     {cfg.channel}")
-    conf.add(f"Max sleep   {cfg.max_sleep} min")
-    conf.add(f"Timezone    {cfg.timezone or '—'}")
-    conf.add(f"LED bright  {cfg.led_brightness}")
-    conf.add(f"BLE         {'[green]enabled[/green]' if cfg.ble_enabled else '[dim]disabled[/dim]'}")
-    conf.add(f"Nightly reboot  {'[green]yes[/green]' if cfg.nightly_reboot else '[dim]no[/dim]'}")
+    net = tree.add("[bold]Network[/bold]")
+    net.add(f"Channel     {cfg.channel}" + (f" / SubGHz {cfg.subghz_channel}" if cfg.has_sub_ghz else ""))
+    net.add(f"WiFi power  {_WIFI_POWER.get(cfg.wifi_power, str(cfg.wifi_power))}")
+    if cfg.ble_enabled:
+        net.add("BLE         [green]enabled[/green]")
+
+    disp = tree.add("[bold]Display[/bold]")
+    disp.add(f"Alias       {cfg.alias or '—'}")
+    disp.add(f"RGB LED     {_LED_BRIGHT.get(cfg.led_brightness, str(cfg.led_brightness))}")
+    disp.add(f"TFT         {_TFT_BRIGHT.get(cfg.tft_brightness, str(cfg.tft_brightness))}")
+    disp.add(f"Language    {_LANGUAGE.get(cfg.language, str(cfg.language))}")
+    disp.add(f"Preview     {'[green]on[/green]' if cfg.preview else '[dim]off[/dim]'}")
+    disp.add(f"Timestamp   {'[green]on[/green]' if cfg.show_timestamp else '[dim]off[/dim]'}")
+
+    sched = tree.add("[bold]Schedule[/bold]")
+    sched.add(f"Max sleep           {_MAX_SLEEP.get(cfg.max_sleep, f'{cfg.max_sleep} min')}")
+    sched.add(f"Shorten during cfg  {'[green]yes[/green]' if cfg.stop_sleep else '[dim]no[/dim]'}")
+    if cfg.sleep_time1 or cfg.sleep_time2:
+        sched.add(f"No updates          {cfg.sleep_time1:02d}:00–{cfg.sleep_time2:02d}:00")
+    sched.add(f"Nightly reboot      {'[green]yes[/green]' if cfg.nightly_reboot else '[dim]no[/dim]'}")
+
+    adv = tree.add("[bold]Advanced[/bold]")
+    adv.add(f"Timezone    {cfg.timezone or '—'}")
+    adv.add(f"Repo        {cfg.repo or '—'}")
+    adv.add(f"Discovery   {'[green]on[/green]' if cfg.discovery else '[dim]off[/dim]'}")
+    if cfg.lock:
+        adv.add("[yellow]Locked[/yellow]")
 
     _console.print(tree)
 

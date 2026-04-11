@@ -152,6 +152,7 @@ async def test_get_sysinfo(client):
 
     assert info.alias == "My AP"
     assert info.env == "OpenDisplay_Mini_AP_v4"
+    assert info.ap_version == "20"
     assert info.has_c6 is True
     assert info.has_h2 is False
     assert info.can_rollback is False

@@ -37,27 +37,27 @@ class Tag:
     def from_dict(cls, data: dict[str, Any]) -> "Tag":
         """Parse a tag dict as returned by the AP /get_db endpoint."""
         return cls(
-            mac=data.get("mac", ""),
-            alias=data.get("alias", ""),
-            hw_type=data.get("hwType", 0),
-            last_seen=data.get("lastseen", 0),
-            next_update=data.get("nextupdate", 0),
-            next_checkin=data.get("nextcheckin", 0),
-            pending=data.get("pending", 0),
-            content_mode=data.get("contentMode", 0),
-            lqi=data.get("LQI", 0),
-            rssi=data.get("RSSI", 0),
-            temperature=data.get("temperature", 0),
-            battery_mv=data.get("batteryMv", 0),
-            wakeup_reason=data.get("wakeupReason", 0),
-            capabilities=data.get("capabilities", 0),
-            rotate=data.get("rotate", 0),
-            lut=data.get("lut", 0),
-            update_count=data.get("updatecount", 0),
-            is_external=bool(data.get("isexternal", False)),
-            ap_ip=data.get("apip", ""),
-            channel=data.get("ch", 0),
-            firmware_version=data.get("ver", 0),
+            mac=data["mac"],
+            alias=data["alias"],
+            hw_type=data["hwType"],
+            last_seen=data["lastseen"],
+            next_update=data["nextupdate"],
+            next_checkin=data["nextcheckin"],
+            pending=data["pending"],
+            content_mode=data["contentMode"],
+            lqi=data["LQI"],
+            rssi=data["RSSI"],
+            temperature=data["temperature"],
+            battery_mv=data["batteryMv"],
+            wakeup_reason=data["wakeupReason"],
+            capabilities=data["capabilities"],
+            rotate=data["rotate"],
+            lut=data["lut"],
+            update_count=data["updatecount"],
+            is_external=bool(data["isexternal"]),
+            ap_ip=data["apip"],
+            channel=data["ch"],
+            firmware_version=data["ver"],
         )
 
 
@@ -75,8 +75,7 @@ class APStatus:
     uptime: int
     db_size: int
     little_fs_free: int
-    ps_ram_free: int
-    temp: float
+    ps_ram_free: int | None  # absent on boards without PSRAM
     wifi_status: int
     low_battery_count: int
     timeout_count: int
@@ -85,21 +84,20 @@ class APStatus:
     def from_dict(cls, data: dict[str, Any]) -> "APStatus":
         """Parse a sys-message dict from the AP WebSocket."""
         return cls(
-            current_time=data.get("currtime", 0),
-            heap=data.get("heap", 0),
-            record_count=data.get("recordcount", 0),
-            ap_state=APState(data.get("apstate", 0)),
-            run_state=RunStatus(data.get("runstate", 0)),
-            rssi=data.get("rssi", 0),
-            wifi_ssid=data.get("wifissid", ""),
-            uptime=data.get("uptime", 0),
-            db_size=data.get("dbsize", 0),
-            little_fs_free=data.get("littlefsfree", 0),
-            ps_ram_free=data.get("psfree", 0),
-            temp=float(data.get("temp", 0.0)),
-            wifi_status=data.get("wifistatus", 0),
-            low_battery_count=data.get("lowbattcount", 0),
-            timeout_count=data.get("timeoutcount", 0),
+            current_time=data["currtime"],
+            heap=data["heap"],
+            record_count=data["recordcount"],
+            ap_state=APState(data["apstate"]),
+            run_state=RunStatus(data["runstate"]),
+            rssi=data["rssi"],
+            wifi_ssid=data["wifissid"],
+            uptime=data["uptime"],
+            db_size=data["dbsize"],
+            little_fs_free=data["littlefsfree"],
+            ps_ram_free=data.get("psfree"),  # conditional on BOARD_HAS_PSRAM
+            wifi_status=data["wifistatus"],
+            low_battery_count=data["lowbattcount"],
+            timeout_count=data["timeoutcount"],
         )
 
 
@@ -116,79 +114,116 @@ class APInfo:
     flash_size: int
     has_c6: bool
     has_h2: bool
-    has_ble: bool
     can_rollback: bool
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "APInfo":
         return cls(
-            alias=data.get("alias", ""),
-            env=data.get("env", ""),
-            build_version=data.get("buildversion", ""),
-            build_time=data.get("buildtime", ""),
-            ap_version=str(data.get("ap_version", "")),
-            psram_size=data.get("psramsize", 0),
-            flash_size=data.get("flashsize", 0),
-            has_c6=bool(data.get("hasC6", False)),
-            has_h2=bool(data.get("hasH2", False)),
-            has_ble=False,  # not reported by /sysinfo; capability is in /get_ap_config
-            can_rollback=bool(data.get("rollback", False)),
+            alias=data["alias"],
+            env=data["env"],
+            build_version=data["buildversion"],
+            build_time=data["buildtime"],
+            ap_version=str(data["ap_version"]),
+            psram_size=data["psramsize"],
+            flash_size=data["flashsize"],
+            has_c6=bool(data["hasC6"]),
+            has_h2=bool(data["hasH2"]),
+            can_rollback=bool(data["rollback"]),
         )
 
 
 @dataclass
 class APConfig:
-    """Mutable AP configuration (from /get_ap_config, written via /save_apcfg)."""
+    """Mutable AP configuration (from /get_ap_config, written via /save_apcfg).
 
+    Capability fields (``has_*``) are read-only flags reported by the AP firmware.
+    Config fields are writable via :meth:`to_dict` / ``save_apcfg``.
+    """
+
+    # Writable config
     alias: str
     channel: int
+    subghz_channel: int
     led_brightness: int
     tft_brightness: int
+    language: int
     max_sleep: int
+    stop_sleep: int
     timezone: str
     preview: bool
     nightly_reboot: bool
+    lock: bool
+    wifi_power: int
+    sleep_time1: int
+    sleep_time2: int
     ble_enabled: bool
     repo: str
-    extra: dict[str, Any] = field(default_factory=dict)
+    env: str
+    discovery: bool
+    show_timestamp: bool
+    # Read-only hardware capability flags (sent as string "0"/"1" by the AP)
+    has_ble: bool
+    has_c6: bool
+    has_h2: bool
+    has_sub_ghz: bool
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "APConfig":
-        known = {
-            "alias", "channel", "led", "tft",
-            "maxsleep", "timezone", "preview", "nightlyreboot", "ble", "repo",
-        }
-        extra = {k: v for k, v in data.items() if k not in known}
+        def _flag(key: str) -> bool:
+            """Capability flags are sent as string '0'/'1'; absent = False."""
+            return str(data.get(key, "0")) == "1"
+
         return cls(
-            alias=data.get("alias", ""),
-            channel=data.get("channel", 11),
-            led_brightness=data.get("led", 0),
-            tft_brightness=data.get("tft", 0),
-            max_sleep=data.get("maxsleep", 60),
-            timezone=data.get("timezone", ""),
-            preview=bool(data.get("preview", False)),
-            nightly_reboot=bool(data.get("nightlyreboot", False)),
-            ble_enabled=bool(data.get("ble", False)),
-            repo=data.get("repo", ""),
-            extra=extra,
+            alias=data["alias"],
+            channel=data["channel"],
+            subghz_channel=data["subghzchannel"],
+            led_brightness=data["led"],
+            tft_brightness=data["tft"],
+            language=data["language"],
+            max_sleep=data["maxsleep"],
+            stop_sleep=data["stopsleep"],
+            timezone=data["timezone"],
+            preview=bool(data["preview"]),
+            nightly_reboot=bool(data["nightlyreboot"]),
+            lock=bool(data["lock"]),
+            wifi_power=data["wifipower"],
+            sleep_time1=data["sleeptime1"],
+            sleep_time2=data["sleeptime2"],
+            ble_enabled=bool(data["ble"]),
+            repo=data["repo"],
+            env=data["env"],
+            discovery=bool(data["discovery"]),
+            show_timestamp=bool(data["showtimestamp"]),
+            has_ble=_flag("hasBLE"),
+            has_c6=_flag("C6"),
+            has_h2=_flag("H2"),
+            has_sub_ghz=_flag("hasSubGhz"),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize back to the AP's field names for /save_apcfg."""
-        d: dict[str, Any] = {
+        """Serialize writable fields back to the AP's field names for /save_apcfg."""
+        return {
             "alias": self.alias,
             "channel": self.channel,
+            "subghzchannel": self.subghz_channel,
             "led": self.led_brightness,
             "tft": self.tft_brightness,
+            "language": self.language,
             "maxsleep": self.max_sleep,
+            "stopsleep": self.stop_sleep,
             "timezone": self.timezone,
             "preview": int(self.preview),
             "nightlyreboot": int(self.nightly_reboot),
+            "lock": int(self.lock),
+            "wifipower": self.wifi_power,
+            "sleeptime1": self.sleep_time1,
+            "sleeptime2": self.sleep_time2,
             "ble": int(self.ble_enabled),
             "repo": self.repo,
+            "env": self.env,
+            "discovery": int(self.discovery),
+            "showtimestamp": int(self.show_timestamp),
         }
-        d.update(self.extra)
-        return d
 
 
 @dataclass
@@ -223,8 +258,8 @@ class TagType:
             type_id=type_id,
             version=data.get("version", 1),
             name=data.get("name", f"Unknown Type {type_id}"),
-            width=data.get("width", 296),
-            height=data.get("height", 128),
+            width=data["width"],
+            height=data["height"],
             rotatebuffer=data.get("rotatebuffer", 0),
             bpp=data.get("bpp", 2),
             color_table=data.get("colortable", {"white": [255, 255, 255], "black": [0, 0, 0]}),

@@ -9,13 +9,16 @@ description = "Async Python client for the OpenDisplay AP (OpenEPaperLink)"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
-keywords = ["openepaperlink", "openepaperdisplay", "eink", "epaper", "iot", "async"]
+keywords = ["openepaperlink", "oepl", "eink", "epaper", "iot", "async"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Home Automation",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Framework :: AsyncIO",
