@@ -126,13 +126,13 @@ class APInfo:
             env=data.get("env", ""),
             build_version=data.get("buildversion", ""),
             build_time=data.get("buildtime", ""),
-            ap_version=data.get("apversion", ""),
+            ap_version=str(data.get("ap_version", "")),
             psram_size=data.get("psramsize", 0),
             flash_size=data.get("flashsize", 0),
-            has_c6=bool(data.get("hasc6", False)),
-            has_h2=bool(data.get("hash2", False)),
-            has_ble=bool(data.get("hasble", False)),
-            can_rollback=bool(data.get("canrollback", False)),
+            has_c6=bool(data.get("hasC6", False)),
+            has_h2=bool(data.get("hasH2", False)),
+            has_ble=False,  # not reported by /sysinfo; capability is in /get_ap_config
+            can_rollback=bool(data.get("rollback", False)),
         )
 
 
@@ -155,15 +155,15 @@ class APConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "APConfig":
         known = {
-            "alias", "channel", "ledbrightness", "tftbrightness",
+            "alias", "channel", "led", "tft",
             "maxsleep", "timezone", "preview", "nightlyreboot", "ble", "repo",
         }
         extra = {k: v for k, v in data.items() if k not in known}
         return cls(
             alias=data.get("alias", ""),
             channel=data.get("channel", 11),
-            led_brightness=data.get("ledbrightness", 0),
-            tft_brightness=data.get("tftbrightness", 0),
+            led_brightness=data.get("led", 0),
+            tft_brightness=data.get("tft", 0),
             max_sleep=data.get("maxsleep", 60),
             timezone=data.get("timezone", ""),
             preview=bool(data.get("preview", False)),
@@ -178,8 +178,8 @@ class APConfig:
         d: dict[str, Any] = {
             "alias": self.alias,
             "channel": self.channel,
-            "ledbrightness": self.led_brightness,
-            "tftbrightness": self.tft_brightness,
+            "led": self.led_brightness,
+            "tft": self.tft_brightness,
             "maxsleep": self.max_sleep,
             "timezone": self.timezone,
             "preview": int(self.preview),
@@ -211,9 +211,9 @@ class TagType:
         "black": [0, 0, 0],
     })
     short_lut: int = 2
-    options: list = field(default_factory=list)
-    content_ids: list = field(default_factory=list)
-    template: dict = field(default_factory=dict)
+    options: list[Any] = field(default_factory=list)
+    content_ids: list[Any] = field(default_factory=list)
+    template: dict[str, Any] = field(default_factory=dict)
     use_template: Any = None
     zlib_compression: Any = None
 

@@ -1,4 +1,5 @@
 """oepl — async Python client for the OpenDisplay AP."""
+__version__ = "0.1.0"
 from .client import OEPLClient
 from .models import Tag, APConfig, APInfo, APStatus, TagType
 from .enums import APState, RunStatus, Rotation, LUT, TagCommand

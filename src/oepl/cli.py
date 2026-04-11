@@ -16,6 +16,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.tree import Tree
 
+from . import __version__
 from .client import OEPLClient
 from .enums import LUT, Rotation, TagCommand
 from .exceptions import OEPLConnectionError, OEPLError, OEPLTimeoutError
@@ -146,7 +147,6 @@ async def _tags(host: str, watch: bool, output_json: bool) -> None:
                 f"[green]Connected[/green]" if c else "[yellow]Reconnecting…[/yellow]"
             )
         )
-        await client.connect()
         try:
             await asyncio.Event().wait()  # run forever
         except asyncio.CancelledError:
@@ -431,6 +431,7 @@ def main() -> None:
         prog="oepl",
         description="OpenEPaperLink AP command-line tool",
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
     sub = parser.add_subparsers(dest="command", required=True)
 

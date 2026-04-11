@@ -557,11 +557,11 @@ def assemble_image_from_bitmap(bitmap_data: bytes, tagtype: Dict[str, Any]) -> I
 
     # Apply final rotation for display based on rotatebuffer
     if rotatebuffer == 1:
-        image = image.transpose(Image.ROTATE_270)  # PIL ROTATE_270 = 90° clockwise
+        image = image.transpose(Image.Transpose.ROTATE_270)
     elif rotatebuffer == 2:
-        image = image.transpose(Image.ROTATE_180)
+        image = image.transpose(Image.Transpose.ROTATE_180)
     elif rotatebuffer == 3:
-        image = image.transpose(Image.ROTATE_90)
+        image = image.transpose(Image.Transpose.ROTATE_90)
 
     return image
 

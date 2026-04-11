@@ -139,13 +139,12 @@ async def test_get_sysinfo(client):
         "env": "OpenDisplay_Mini_AP_v4",
         "buildversion": "1.0.0",
         "buildtime": "2024-01-01",
-        "apversion": "2.0",
+        "ap_version": 20,
         "psramsize": 8000000,
         "flashsize": 16000000,
-        "hasc6": True,
-        "hash2": False,
-        "hasble": True,
-        "canrollback": False,
+        "hasC6": 1,
+        "hasH2": 0,
+        "rollback": False,
     }
     with aioresponses() as m:
         m.get(f"{BASE}/sysinfo", payload=sysinfo)
@@ -154,7 +153,8 @@ async def test_get_sysinfo(client):
     assert info.alias == "My AP"
     assert info.env == "OpenDisplay_Mini_AP_v4"
     assert info.has_c6 is True
-    assert info.has_ble is True
+    assert info.has_h2 is False
+    assert info.can_rollback is False
 
 
 @pytest.mark.asyncio

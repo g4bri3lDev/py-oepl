@@ -85,10 +85,10 @@ class _WebSocketHandler:
             return
 
         if "tags" in data:
-            tag_data = data["tags"][0]
-            tag = Tag.from_dict(tag_data)
-            self._client._tags[tag.mac] = tag
-            self._client._fire_tag_update(tag)
+            for tag_data in data["tags"]:
+                tag = Tag.from_dict(tag_data)
+                self._client._tags[tag.mac] = tag
+                self._client._fire_tag_update(tag)
 
         elif "sys" in data:
             try:

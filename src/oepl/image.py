@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import io
+import logging
 import zlib
 from PIL import Image
 
 from .models import TagType
 from .g5_decoder import parse_g5_header, process_g5
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def decode_image(raw_data: bytes, tag_type: TagType) -> bytes:
@@ -40,8 +43,8 @@ def _decode_esl_raw(data: bytes, tag_type: TagType) -> bytes:
                     'colortable': tag_type.color_table,
                 }
                 return process_g5(data, tagtype_dict, output_format='bytes')
-        except Exception:
-            pass  # fall through to zlib/raw handling
+        except Exception as exc:
+            _LOGGER.warning("G5 decode failed, falling through to zlib/raw: %s", exc)
 
     # Calculate expected bitmap size
     width = tag_type.height if tag_type.rotatebuffer % 2 else tag_type.width
@@ -82,8 +85,8 @@ def _decode_esl_raw(data: bytes, tag_type: TagType) -> bytes:
                 if len(data) < total_size:
                     data = data.ljust(total_size, b'\x00')
                 return data
-    except Exception:
-        pass
+    except Exception as exc:
+        _LOGGER.warning("zlib decode failed, treating as raw bitmap: %s", exc)
 
     # Treat as raw
     if len(data) < total_size:

@@ -41,7 +41,7 @@ class _HTTPClient:
             resp = await self._session.request(
                 method, self._url(path), timeout=timeout, **kwargs
             )
-        except aiohttp.ClientConnectorError as exc:
+        except aiohttp.ClientError as exc:
             raise OEPLConnectionError(str(exc)) from exc
         except asyncio.TimeoutError as exc:
             raise OEPLTimeoutError(f"Request to {path} timed out") from exc
