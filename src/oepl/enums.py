@@ -46,3 +46,48 @@ class TagCommand(str, Enum):
     REFRESH = "refresh"
     REBOOT = "reboot"
     SCAN = "scan"
+
+
+class WakeupReason(IntEnum):
+    """Reason the tag woke up and checked in (from oepl-definitions.h)."""
+    TIMED = 0x00
+    GPIO = 0x02
+    NFC = 0x03
+    BUTTON1 = 0x04
+    BUTTON2 = 0x05
+    RF = 0x0F
+    FAILED_OTA = 0xE0
+    FIRST_BOOT = 0xFC
+    NETWORK_SCAN = 0xFD
+    WDT_RESET = 0xFE
+
+
+class ContentMode(IntEnum):
+    """Content mode assigned to a tag (from contentmanager.cpp)."""
+    NOT_CONFIGURED = 0
+    TODAY = 1
+    COUNT_DAYS = 2
+    COUNT_HOURS = 3
+    WEATHER = 4
+    FIRMWARE = 5
+    IMAGE_URL = 7
+    FORECAST = 8
+    RSS_FEED = 9
+    QR_CODE = 10
+    CALENDAR = 11
+    REMOTE_AP = 12
+    SEG_STATIC = 13
+    NFC_URL = 14
+    BUIENRADAR = 16
+    TAG_COMMAND = 17
+    TAG_CONFIG = 18
+    JSON_TEMPLATE = 19
+    DISPLAY_COPY = 20
+    AP_INFO = 21
+    STATIC_IMAGE = 22
+    STATIC_IMAGE_ADV = 23
+    EXTERNAL_IMAGE = 24
+    HOME_ASSISTANT = 25
+    TIMESTAMP = 26
+    DAY_AHEAD = 27
+    TIME_RAW = 29

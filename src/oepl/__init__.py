@@ -2,7 +2,7 @@
 __version__ = "0.1.0"
 from .client import OEPLClient
 from .models import Tag, APConfig, APInfo, APStatus, TagType
-from .enums import APState, RunStatus, Rotation, LUT, TagCommand
+from .enums import APState, RunStatus, Rotation, LUT, TagCommand, WakeupReason, ContentMode
 from .led import Color, LEDSegment, LEDPattern
 from .exceptions import (
     OEPLError,
@@ -35,6 +35,8 @@ __all__ = [
     "Rotation",
     "LUT",
     "TagCommand",
+    "WakeupReason",
+    "ContentMode",
     # LED
     "Color",
     "LEDSegment",

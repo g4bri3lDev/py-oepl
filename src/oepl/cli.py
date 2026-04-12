@@ -18,7 +18,7 @@ from rich.tree import Tree
 
 from . import __version__
 from .client import OEPLClient
-from .enums import LUT, Rotation, TagCommand
+from .enums import LUT, Rotation, TagCommand, WakeupReason, ContentMode
 from .exceptions import OEPLConnectionError, OEPLError, OEPLTimeoutError
 from .image import decode_image
 from .led import Color, LEDPattern, LEDSegment
@@ -464,6 +464,129 @@ async def _get_image(host: str, mac: str, output: str | None) -> None:
     )
 
 
+# ── tag ───────────────────────────────────────────────────────────────────────
+
+
+def _add_tag_parser(sub: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
+    p = sub.add_parser("tag", help="Show detailed info for a single tag")
+    _add_host(p)
+    p.add_argument("mac", metavar="MAC", help="Tag MAC address")
+    p.add_argument("--json", dest="output_json", action="store_true", help="Output as JSON")
+    p.set_defaults(func=_cmd_tag)
+
+
+def _cmd_tag(args: argparse.Namespace) -> None:
+    _run(_tag(_host(args), args.mac, args.output_json))
+
+
+async def _tag(host: str, mac: str, output_json: bool) -> None:
+    mac = mac.upper()
+    try:
+        with _spinner() as p:
+            p.add_task(f"Fetching tag {mac}…", total=None)
+            async with OEPLClient(host) as client:
+                tags = await client.get_tags()
+                tag = next((t for t in tags if t.mac.upper() == mac), None)
+                if tag is None:
+                    _error(f"Tag {mac} not found on AP")
+                tag_type = await client.get_tag_type(tag.hw_type)
+    except OEPLError as exc:
+        _error(str(exc))
+
+    if output_json:
+        _stdout.print_json(json.dumps({
+            "mac": tag.mac,
+            "alias": tag.alias,
+            "hw_type": tag.hw_type,
+            "hw_name": tag_type.name if tag_type else None,
+            "width": tag_type.width if tag_type else None,
+            "height": tag_type.height if tag_type else None,
+            "battery_mv": tag.battery_mv,
+            "rssi": tag.rssi,
+            "lqi": tag.lqi,
+            "temperature": tag.temperature,
+            "channel": tag.channel,
+            "firmware_version": tag.firmware_version,
+            "last_seen": tag.last_seen,
+            "next_update": tag.next_update,
+            "next_checkin": tag.next_checkin,
+            "pending": tag.pending,
+            "update_count": tag.update_count,
+            "content_mode": tag.content_mode,
+            "wakeup_reason": tag.wakeup_reason,
+            "capabilities": tag.capabilities,
+            "rotate": tag.rotate,
+            "lut": tag.lut,
+            "is_external": tag.is_external,
+            "ap_ip": tag.ap_ip,
+        }))
+        return
+
+    hw_label = f"0x{tag.hw_type:02x}"
+    if tag_type:
+        hw_label += f"  {tag_type.name}  {tag_type.width}×{tag_type.height}  {tag_type.bpp}bpp"
+
+    tree = Tree(f"Tag  [bold]{tag.mac.lower()}[/bold]", guide_style="cyan dim")
+
+    info = tree.add("[bold]Identity[/bold]")
+    info.add(f"Alias       {tag.alias or '—'}")
+    info.add(f"Hardware    {hw_label}")
+    info.add(f"Firmware    {tag.firmware_version}")
+    if tag.is_external:
+        info.add(f"External    via {tag.ap_ip}")
+
+    radio = tree.add("[bold]Radio[/bold]")
+    radio.add(f"Channel     {tag.channel}")
+    radio.add(f"RSSI        {tag.rssi} dBm")
+    radio.add(f"LQI         {tag.lqi}")
+
+    status = tree.add("[bold]Status[/bold]")
+    status.add(f"Battery     {tag.battery_mv} mV")
+    if tag.temperature:
+        status.add(f"Temp        {tag.temperature} °C")
+    status.add(f"Last seen   {_ts(tag.last_seen)}")
+    status.add(f"Next update {_ts(tag.next_update)}")
+    status.add(f"Next checkin {_ts(tag.next_checkin)}")
+    if tag.pending:
+        status.add(f"[yellow]Pending     {tag.pending}[/yellow]")
+    status.add(f"Updates     {tag.update_count}")
+
+    _LUT_NAMES = {0: "Default", 1: "No repeats", 2: "Fast (no reds)", 3: "Fast", 0x10: "OTA"}
+    _ROTATE_NAMES = {0: "None", 1: "90°", 2: "180°", 3: "270°"}
+
+    def _enum_label(cls: type, val: int) -> str:
+        try:
+            return cls(val).name.replace("_", " ").title()
+        except ValueError:
+            return str(val)
+
+    cfg = tree.add("[bold]Config[/bold]")
+    cfg.add(f"Content mode  {_enum_label(ContentMode, tag.content_mode)}")
+    cfg.add(f"Wakeup reason {_enum_label(WakeupReason, tag.wakeup_reason)}")
+    cfg.add(f"Rotate        {_ROTATE_NAMES.get(tag.rotate, str(tag.rotate))}")
+    cfg.add(f"LUT           {_LUT_NAMES.get(tag.lut, str(tag.lut))}")
+
+    _CAPABILITIES = [
+        (0x0001, "LED"),
+        (0x0002, "Compression"),
+        (0x0004, "Custom LUTs"),
+        (0x0008, "Alt LUT size"),
+        (0x0010, "External power"),
+        (0x0020, "Wake button"),
+        (0x0040, "NFC"),
+        (0x0080, "NFC wake"),
+        (0x0100, "BLE"),
+    ]
+    active = [name for bit, name in _CAPABILITIES if tag.capabilities & bit]
+    caps_branch = cfg.add(f"Capabilities  0x{tag.capabilities:04x}")
+    for name in active:
+        caps_branch.add(name)
+    if not active:
+        caps_branch.add("[dim]none[/dim]")
+
+    _console.print(tree)
+
+
 # ── entry point ───────────────────────────────────────────────────────────────
 
 
@@ -478,6 +601,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     _add_tags_parser(sub)
+    _add_tag_parser(sub)
     _add_ap_parser(sub)
     _add_upload_parser(sub)
     _add_cmd_parser(sub)
