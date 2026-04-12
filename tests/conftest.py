@@ -1,8 +1,7 @@
 """Shared fixtures for oepl tests."""
-import pytest
-import aiohttp
-from aioresponses import aioresponses
 
+import pytest
+from aioresponses import aioresponses
 
 HOST = "192.168.1.1"
 BASE_URL = f"http://{HOST}"

@@ -1,4 +1,5 @@
 """Exceptions for the oepl library."""
+
 from __future__ import annotations
 
 

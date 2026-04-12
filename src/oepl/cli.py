@@ -1,4 +1,5 @@
 """Command-line interface for oepl."""
+
 from __future__ import annotations
 
 import argparse
@@ -7,8 +8,9 @@ import json
 import logging
 import os
 import sys
+from collections.abc import Coroutine
 from datetime import datetime, timezone
-from typing import NoReturn
+from typing import Any, NoReturn
 
 from rich.console import Console
 from rich.logging import RichHandler
@@ -24,15 +26,15 @@ from .image import decode_image
 from .led import Color, LEDPattern, LEDSegment
 from .models import Tag
 
-_console = Console(stderr=True)   # interactive UI → stderr
-_stdout = Console()               # --json output  → stdout
+_console = Console(stderr=True)  # interactive UI → stderr
+_stdout = Console()  # --json output  → stdout
 
 _LUT_CHOICES = {m.name.lower(): m for m in LUT}
 _ROTATE_CHOICES = {"0": Rotation.NONE, "90": Rotation.R90, "180": Rotation.R180, "270": Rotation.R270}
 _CMD_CHOICES = {c.value: c for c in TagCommand}
 
 
-def _run(coro) -> None:  # type: ignore[type-arg]
+def _run(coro: Coroutine[Any, Any, None]) -> None:
     asyncio.run(coro)
 
 
@@ -143,9 +145,7 @@ async def _tags(host: str, watch: bool, output_json: bool) -> None:
     async with OEPLClient(host) as client:
         client.on_tag_update(on_update)
         client.on_connection_change(
-            lambda c: _console.print(
-                f"[green]Connected[/green]" if c else "[yellow]Reconnecting…[/yellow]"
-            )
+            lambda c: _console.print("[green]Connected[/green]" if c else "[yellow]Reconnecting…[/yellow]")
         )
         try:
             await asyncio.Event().wait()  # run forever
@@ -229,7 +229,8 @@ async def _ap(host: str, output_json: bool) -> None:
     hw.add(f"PSRAM       {info.psram_size // 1024 // 1024} MB" if info.psram_size else "PSRAM       —")
     hw.add(f"Flash       {info.flash_size // 1024 // 1024} MB" if info.flash_size else "Flash       —")
     hw.add(f"Rollback    {'[green]yes[/green]' if info.can_rollback else '[dim]no[/dim]'}")
-    caps = [name for flag, name in [(cfg.has_c6, "C6"), (cfg.has_h2, "H2"), (cfg.has_ble, "BLE"), (cfg.has_sub_ghz, "SubGHz")] if flag]
+    _hw_caps = [(cfg.has_c6, "C6"), (cfg.has_h2, "H2"), (cfg.has_ble, "BLE"), (cfg.has_sub_ghz, "SubGHz")]
+    caps = [name for flag, name in _hw_caps if flag]
     if caps:
         hw.add(f"Features    {', '.join(caps)}")
 
@@ -301,6 +302,7 @@ def _cmd_upload(args: argparse.Namespace) -> None:
 async def _upload(host: str, mac: str, image_path: str, lut: LUT, rotate: Rotation, ttl: int) -> None:
     try:
         from PIL import Image, UnidentifiedImageError
+
         try:
             image = Image.open(image_path)
         except FileNotFoundError:
@@ -362,7 +364,9 @@ def _add_led_parser(sub: argparse._SubParsersAction) -> None:  # type: ignore[ty
         default=[255, 0, 0],
         help="RGB color 0-255 (default: 255 0 0)",
     )
-    p.add_argument("--flash-speed", type=float, default=0.2, metavar="SECS", help="Flash speed in seconds (default: 0.2)")
+    p.add_argument(
+        "--flash-speed", type=float, default=0.2, metavar="SECS", help="Flash speed in seconds (default: 0.2)"
+    )
     p.add_argument("--flash-count", type=int, default=2, metavar="N", help="Flashes per cycle (default: 2)")
     p.add_argument("--brightness", type=int, default=2, metavar="1-16", help="LED brightness 1-16 (default: 2)")
     p.add_argument("--repeats", type=int, default=2, metavar="N", help="Pattern repeat count (default: 2)")
@@ -398,7 +402,8 @@ def _add_get_image_parser(sub: argparse._SubParsersAction) -> None:  # type: ign
     _add_host(p)
     p.add_argument("mac", metavar="MAC", help="Tag MAC address")
     p.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         metavar="FILE",
         default=None,
         help="Output path (default: <mac>.jpg)",
@@ -480,32 +485,36 @@ async def _tag(host: str, mac: str, output_json: bool) -> None:
         _error(str(exc))
 
     if output_json:
-        _stdout.print_json(json.dumps({
-            "mac": tag.mac,
-            "alias": tag.alias,
-            "hw_type": tag.hw_type,
-            "hw_name": tag_type.name if tag_type else None,
-            "width": tag_type.width if tag_type else None,
-            "height": tag_type.height if tag_type else None,
-            "battery_mv": tag.battery_mv,
-            "rssi": tag.rssi,
-            "lqi": tag.lqi,
-            "temperature": tag.temperature,
-            "channel": tag.channel,
-            "firmware_version": tag.firmware_version,
-            "last_seen": tag.last_seen,
-            "next_update": tag.next_update,
-            "next_checkin": tag.next_checkin,
-            "pending": tag.pending,
-            "update_count": tag.update_count,
-            "content_mode": tag.content_mode,
-            "wakeup_reason": tag.wakeup_reason,
-            "capabilities": tag.capabilities,
-            "rotate": tag.rotate,
-            "lut": tag.lut,
-            "is_external": tag.is_external,
-            "ap_ip": tag.ap_ip,
-        }))
+        _stdout.print_json(
+            json.dumps(
+                {
+                    "mac": tag.mac,
+                    "alias": tag.alias,
+                    "hw_type": tag.hw_type,
+                    "hw_name": tag_type.name if tag_type else None,
+                    "width": tag_type.width if tag_type else None,
+                    "height": tag_type.height if tag_type else None,
+                    "battery_mv": tag.battery_mv,
+                    "rssi": tag.rssi,
+                    "lqi": tag.lqi,
+                    "temperature": tag.temperature,
+                    "channel": tag.channel,
+                    "firmware_version": tag.firmware_version,
+                    "last_seen": tag.last_seen,
+                    "next_update": tag.next_update,
+                    "next_checkin": tag.next_checkin,
+                    "pending": tag.pending,
+                    "update_count": tag.update_count,
+                    "content_mode": tag.content_mode,
+                    "wakeup_reason": tag.wakeup_reason,
+                    "capabilities": tag.capabilities,
+                    "rotate": tag.rotate,
+                    "lut": tag.lut,
+                    "is_external": tag.is_external,
+                    "ap_ip": tag.ap_ip,
+                }
+            )
+        )
         return
 
     hw_label = f"0x{tag.hw_type:02x}"

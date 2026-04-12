@@ -1,7 +1,7 @@
 """Tests for data model parsing."""
-import pytest
-from oepl.models import APConfig, APStatus, Tag, TagType
+
 from oepl.enums import APState, RunStatus
+from oepl.models import APConfig, APStatus, Tag, TagType
 
 
 def test_tag_from_dict(tag_dict):
@@ -27,7 +27,6 @@ def test_tag_from_dict(tag_dict):
     assert tag.ap_ip == "192.168.1.1"
     assert tag.channel == 11
     assert tag.firmware_version == 1337
-
 
 
 def test_tag_labels_known(tag_dict):
@@ -120,9 +119,19 @@ def test_apstatus_from_dict():
 def test_apstatus_no_psram():
     """ps_ram_free is None on boards without PSRAM."""
     sys_msg = {
-        "currtime": 0, "heap": 0, "recordcount": 0, "apstate": 0, "runstate": 0,
-        "rssi": 0, "wifissid": "", "uptime": 0, "dbsize": 0, "littlefsfree": 0,
-        "wifistatus": 0, "lowbattcount": 0, "timeoutcount": 0,
+        "currtime": 0,
+        "heap": 0,
+        "recordcount": 0,
+        "apstate": 0,
+        "runstate": 0,
+        "rssi": 0,
+        "wifissid": "",
+        "uptime": 0,
+        "dbsize": 0,
+        "littlefsfree": 0,
+        "wifistatus": 0,
+        "lowbattcount": 0,
+        "timeoutcount": 0,
     }
     assert APStatus.from_dict(sys_msg).ps_ram_free is None
 

@@ -7,43 +7,50 @@ Python port with complete image assembly pipeline
 """
 
 import ctypes
+import json
+from typing import Any, Dict, Tuple, Union
+
 import numpy as np
 from PIL import Image
-from typing import Union, Tuple, Dict, Any
-import json
-
 
 # ============================================================================
 # Exception Classes
 # ============================================================================
 
+
 class G5DecoderError(Exception):
     """Base exception for G5 decoder errors"""
+
     pass
 
 
 class G5InvalidParameterError(G5DecoderError):
     """Invalid parameters provided to decoder"""
+
     pass
 
 
 class G5DecodeError(G5DecoderError):
     """Error during G5 decoding process"""
+
     pass
 
 
 class G5UnsupportedFeatureError(G5DecoderError):
     """Unsupported G5 feature encountered"""
+
     pass
 
 
 class G5DataOverflowError(G5DecoderError):
     """Data overflow during decoding"""
+
     pass
 
 
 class G5MaxFlipsExceededError(G5DecoderError):
     """Maximum flips exceeded during decoding"""
+
     pass
 
 
@@ -75,31 +82,141 @@ HORIZ_LONG_LONG = 3
 # Code table for Group 4 (MMR) decoding
 # Format: code, bit_length pairs
 CODE_TABLE = [
-    0x90, 0, 0x40, 0,          # trash, uncompressed mode - codes 0 and 1
-    3, 7,                       # V(-3) pos = 2
-    0x13, 7,                    # V(3)  pos = 3
-    2, 6, 2, 6,                 # V(-2) pos = 4,5
-    0x12, 6, 0x12, 6,          # V(2)  pos = 6,7
-    0x30, 4, 0x30, 4, 0x30, 4, 0x30, 4,    # pass  pos = 8->F
-    0x30, 4, 0x30, 4, 0x30, 4, 0x30, 4,
-    0x20, 3, 0x20, 3, 0x20, 3, 0x20, 3,    # horiz pos = 10->1F
-    0x20, 3, 0x20, 3, 0x20, 3, 0x20, 3,
-    0x20, 3, 0x20, 3, 0x20, 3, 0x20, 3,
-    0x20, 3, 0x20, 3, 0x20, 3, 0x20, 3,    # V(-1) pos = 20->2F
-    1, 3, 1, 3, 1, 3, 1, 3,
-    1, 3, 1, 3, 1, 3, 1, 3,
-    1, 3, 1, 3, 1, 3, 1, 3,
-    1, 3, 1, 3, 1, 3, 1, 3,
-    0x11, 3, 0x11, 3, 0x11, 3, 0x11, 3,   # V(1)   pos = 30->3F
-    0x11, 3, 0x11, 3, 0x11, 3, 0x11, 3,
-    0x11, 3, 0x11, 3, 0x11, 3, 0x11, 3,
-    0x11, 3, 0x11, 3, 0x11, 3, 0x11, 3
+    0x90,
+    0,
+    0x40,
+    0,  # trash, uncompressed mode - codes 0 and 1
+    3,
+    7,  # V(-3) pos = 2
+    0x13,
+    7,  # V(3)  pos = 3
+    2,
+    6,
+    2,
+    6,  # V(-2) pos = 4,5
+    0x12,
+    6,
+    0x12,
+    6,  # V(2)  pos = 6,7
+    0x30,
+    4,
+    0x30,
+    4,
+    0x30,
+    4,
+    0x30,
+    4,  # pass  pos = 8->F
+    0x30,
+    4,
+    0x30,
+    4,
+    0x30,
+    4,
+    0x30,
+    4,
+    0x20,
+    3,
+    0x20,
+    3,
+    0x20,
+    3,
+    0x20,
+    3,  # horiz pos = 10->1F
+    0x20,
+    3,
+    0x20,
+    3,
+    0x20,
+    3,
+    0x20,
+    3,
+    0x20,
+    3,
+    0x20,
+    3,
+    0x20,
+    3,
+    0x20,
+    3,
+    0x20,
+    3,
+    0x20,
+    3,
+    0x20,
+    3,
+    0x20,
+    3,  # V(-1) pos = 20->2F
+    1,
+    3,
+    1,
+    3,
+    1,
+    3,
+    1,
+    3,
+    1,
+    3,
+    1,
+    3,
+    1,
+    3,
+    1,
+    3,
+    1,
+    3,
+    1,
+    3,
+    1,
+    3,
+    1,
+    3,
+    1,
+    3,
+    1,
+    3,
+    1,
+    3,
+    1,
+    3,
+    0x11,
+    3,
+    0x11,
+    3,
+    0x11,
+    3,
+    0x11,
+    3,  # V(1)   pos = 30->3F
+    0x11,
+    3,
+    0x11,
+    3,
+    0x11,
+    3,
+    0x11,
+    3,
+    0x11,
+    3,
+    0x11,
+    3,
+    0x11,
+    3,
+    0x11,
+    3,
+    0x11,
+    3,
+    0x11,
+    3,
+    0x11,
+    3,
+    0x11,
+    3,
 ]
 
 
 # ============================================================================
 # Utility Functions
 # ============================================================================
+
 
 def read_motorola_long(data: bytes, offset: int) -> int:
     """
@@ -127,7 +244,7 @@ def parse_g5_header(data: bytes) -> Tuple[int, int, int, int]:
         raise G5InvalidParameterError("Data too short for G5 header")
 
     header_size = data[0]
-    width = (data[2] << 8) | data[1]   # Matching JavaScript: (data[2] << 8) | data[1]
+    width = (data[2] << 8) | data[1]  # Matching JavaScript: (data[2] << 8) | data[1]
     height = (data[4] << 8) | data[3]  # Matching JavaScript: (data[4] << 8) | data[3]
     compression_mode = data[5]
 
@@ -140,11 +257,11 @@ def parse_g5_header(data: bytes) -> Tuple[int, int, int, int]:
 
 def validate_header_against_tagtype(width: int, height: int, tagtype: Dict[str, Any]) -> None:
     """Validate parsed header against tagtype specifications"""
-    tagtype_width = tagtype.get('width', 0)
-    tagtype_height = tagtype.get('height', 0)
+    tagtype_width = tagtype.get("width", 0)
+    tagtype_height = tagtype.get("height", 0)
 
-    width_valid = (width == tagtype_width or width == tagtype_height)
-    height_valid = (height == tagtype_width or height == tagtype_height)
+    width_valid = width == tagtype_width or width == tagtype_height
+    height_valid = height == tagtype_width or height == tagtype_height
 
     if not (width_valid and height_valid):
         raise G5InvalidParameterError(
@@ -155,6 +272,7 @@ def validate_header_against_tagtype(width: int, height: int, tagtype: Dict[str, 
 # ============================================================================
 # G5 Decoder Class
 # ============================================================================
+
 
 class G5Decoder:
     """Main G5 decoder class with precise 32-bit arithmetic"""
@@ -207,10 +325,10 @@ class G5Decoder:
             self.cur_flips[i] = xsize
 
         # Prefill with 0x7fff to prevent walking off the end
-        self.cur_flips[MAX_IMAGE_FLIPS - 2] = 0x7fff
-        self.cur_flips[MAX_IMAGE_FLIPS - 1] = 0x7fff
-        self.ref_flips[MAX_IMAGE_FLIPS - 2] = 0x7fff
-        self.ref_flips[MAX_IMAGE_FLIPS - 1] = 0x7fff
+        self.cur_flips[MAX_IMAGE_FLIPS - 2] = 0x7FFF
+        self.cur_flips[MAX_IMAGE_FLIPS - 1] = 0x7FFF
+        self.ref_flips[MAX_IMAGE_FLIPS - 2] = 0x7FFF
+        self.ref_flips[MAX_IMAGE_FLIPS - 1] = 0x7FFF
 
         # Initialize buffer
         self.buf_index = 0
@@ -241,7 +359,7 @@ class G5Decoder:
         while a0 < xsize:
             # Refill buffer if needed
             if bit_off > (REGISTER_WIDTH - 8):
-                buf_index += (bit_off >> 3)
+                buf_index += bit_off >> 3
                 bit_off &= 7
                 if buf_index < len(self.src_data):
                     bits = read_motorola_long(self.src_data, buf_index)
@@ -261,7 +379,7 @@ class G5Decoder:
             else:
                 # Extract code from lookup table
                 # JavaScript: (ulBits >> (REGISTER_WIDTH - 8 - ulBitOff)) & 0xfe
-                l_bits = (bits >> (REGISTER_WIDTH - 8 - bit_off)) & 0xfe
+                l_bits = (bits >> (REGISTER_WIDTH - 8 - bit_off)) & 0xFE
                 s_code = CODE_TABLE[l_bits]
                 bit_off += CODE_TABLE[l_bits + 1]
 
@@ -290,7 +408,7 @@ class G5Decoder:
 
                 elif s_code == 0x20:  # Horizontal codes
                     if bit_off > (REGISTER_WIDTH - 16):
-                        buf_index += (bit_off >> 3)
+                        buf_index += bit_off >> 3
                         bit_off &= 7
                         if buf_index < len(self.src_data):
                             bits = read_motorola_long(self.src_data, buf_index)
@@ -319,7 +437,7 @@ class G5Decoder:
                         tot_run = (bits >> ((REGISTER_WIDTH - h_len) - bit_off)) & h_mask
                         bit_off += h_len
                         if bit_off > (REGISTER_WIDTH - 16):
-                            buf_index += (bit_off >> 3)
+                            buf_index += bit_off >> 3
                             bit_off &= 7
                             if buf_index < len(self.src_data):
                                 bits = read_motorola_long(self.src_data, buf_index)
@@ -367,7 +485,7 @@ class G5Decoder:
 
         # Initialize line to white (0xff)
         for i in range(line_len):
-            output_buffer[line_offset + i] = 0xff
+            output_buffer[line_offset + i] = 0xFF
 
         # Note: x is not incremented in the loop, like JavaScript
         x = 0
@@ -388,12 +506,12 @@ class G5Decoder:
                 start_byte = visible_x >> 3
                 end_byte = (visible_x + visible_run) >> 3
 
-                l_bit = (0xff << (8 - (visible_x & 7))) & 0xff
-                r_bit = 0xff >> ((visible_x + visible_run) & 7)
+                l_bit = (0xFF << (8 - (visible_x & 7))) & 0xFF
+                r_bit = 0xFF >> ((visible_x + visible_run) & 7)
 
                 if end_byte == start_byte:
                     # Run fits in single byte
-                    output_buffer[line_offset + start_byte] &= (l_bit | r_bit)
+                    output_buffer[line_offset + start_byte] &= l_bit | r_bit
                 else:
                     # Mask left-most byte
                     output_buffer[line_offset + start_byte] &= l_bit
@@ -410,6 +528,7 @@ class G5Decoder:
 # ============================================================================
 # Image Assembly Functions
 # ============================================================================
+
 
 def render_16bit_rgb565(data: bytes, width: int, height: int) -> Image.Image:
     """Render 16-bit RGB565 format with scaling factors"""
@@ -434,7 +553,7 @@ def render_16bit_rgb565(data: bytes, width: int, height: int) -> Image.Image:
 
         img_array[y, x] = [r, g, b]
 
-    return Image.fromarray(img_array, 'RGB')
+    return Image.fromarray(img_array, "RGB")
 
 
 def render_indexed_color(data: bytes, width: int, height: int, bpp: int, colortable: Dict[str, Any]) -> Image.Image:
@@ -444,11 +563,13 @@ def render_indexed_color(data: bytes, width: int, height: int, bpp: int, colorta
     # Convert colortable to list format for indexing
     if isinstance(colortable, dict):
         # Handle both string keys and direct color arrays
-        if 'white' in colortable:
+        if "white" in colortable:
             # Named colors
-            color_list = [colortable.get('white', [255, 255, 255]),
-                         colortable.get('black', [0, 0, 0]),
-                         colortable.get('red', [255, 0, 0])]
+            color_list = [
+                colortable.get("white", [255, 255, 255]),
+                colortable.get("black", [0, 0, 0]),
+                colortable.get("red", [255, 0, 0]),
+            ]
         else:
             # Direct color arrays
             color_list = list(colortable.values())
@@ -479,19 +600,23 @@ def render_indexed_color(data: bytes, width: int, height: int, bpp: int, colorta
         pixel_index += 1
         bit_offset += bpp
 
-    return Image.fromarray(img_array, 'RGB')
+    return Image.fromarray(img_array, "RGB")
 
 
-def render_monochrome_or_tricolor(data: bytes, width: int, height: int, bpp: int, colortable: Dict[str, Any]) -> Image.Image:
+def render_monochrome_or_tricolor(
+    data: bytes, width: int, height: int, bpp: int, colortable: Dict[str, Any]
+) -> Image.Image:
     """Render 1-2 bit monochrome or tricolor (B/W/R) displays"""
     img_array = np.zeros((height, width, 3), dtype=np.uint8)
 
     # Convert colortable to list format
     if isinstance(colortable, dict):
-        if 'white' in colortable:
-            color_list = [colortable.get('white', [255, 255, 255]),
-                         colortable.get('black', [0, 0, 0]),
-                         colortable.get('red', [255, 0, 0])]
+        if "white" in colortable:
+            color_list = [
+                colortable.get("white", [255, 255, 255]),
+                colortable.get("black", [0, 0, 0]),
+                colortable.get("red", [255, 0, 0]),
+            ]
         else:
             color_list = list(colortable.values())
     else:
@@ -527,7 +652,7 @@ def render_monochrome_or_tricolor(data: bytes, width: int, height: int, bpp: int
             if pixel_value < len(color_list):
                 img_array[y, x] = color_list[pixel_value][:3]
 
-    return Image.fromarray(img_array, 'RGB')
+    return Image.fromarray(img_array, "RGB")
 
 
 def assemble_image_from_bitmap(bitmap_data: bytes, tagtype: Dict[str, Any]) -> Image.Image:
@@ -537,16 +662,16 @@ def assemble_image_from_bitmap(bitmap_data: bytes, tagtype: Dict[str, Any]) -> I
     """
     # JavaScript canvas dimension logic:
     # [canvas.width, canvas.height] = [tagTypes[hwtype].width, tagTypes[hwtype].height]
-    canvas_width = tagtype['width']
-    canvas_height = tagtype['height']
+    canvas_width = tagtype["width"]
+    canvas_height = tagtype["height"]
 
     # if (tagTypes[hwtype].rotatebuffer % 2) [canvas.width, canvas.height] = [canvas.height, canvas.width]
-    rotatebuffer = tagtype.get('rotatebuffer', 0)
+    rotatebuffer = tagtype.get("rotatebuffer", 0)
     if rotatebuffer % 2:
         canvas_width, canvas_height = canvas_height, canvas_width
 
-    bpp = tagtype['bpp']
-    colortable = tagtype.get('colortable', {})
+    bpp = tagtype["bpp"]
+    colortable = tagtype.get("colortable", {})
 
     if bpp == 16:
         image = render_16bit_rgb565(bitmap_data, canvas_width, canvas_height)
@@ -570,6 +695,7 @@ def assemble_image_from_bitmap(bitmap_data: bytes, tagtype: Dict[str, Any]) -> I
 # Main Interface
 # ============================================================================
 
+
 def decode_g5_to_bitmap(data: bytes, width: int, height: int) -> bytes:
     """Core G5 decoding function - returns raw bitmap bytes"""
     decoder = G5Decoder()
@@ -577,9 +703,7 @@ def decode_g5_to_bitmap(data: bytes, width: int, height: int) -> bytes:
     # Initialize decoder
     init_result = decoder.init_decoder(width, height, data)
     if init_result != G5_SUCCESS:
-        error_map = {
-            G5_INVALID_PARAMETER: G5InvalidParameterError("Invalid decoder parameters")
-        }
+        error_map = {G5_INVALID_PARAMETER: G5InvalidParameterError("Invalid decoder parameters")}
         raise error_map.get(init_result, G5DecoderError(f"Decoder initialization failed: {init_result}"))
 
     # Begin decoding
@@ -605,7 +729,7 @@ def decode_g5_to_bitmap(data: bytes, width: int, height: int) -> bytes:
     return bytes(output_buffer)
 
 
-def process_g5(data: bytes, tagtype: Dict[str, Any], output_format: str = 'pil') -> Union[Image.Image, bytes]:
+def process_g5(data: bytes, tagtype: Dict[str, Any], output_format: str = "pil") -> Union[Image.Image, bytes]:
     """
     Main entry point for G5 decoding and image assembly
 
@@ -636,9 +760,9 @@ def process_g5(data: bytes, tagtype: Dict[str, Any], output_format: str = 'pil')
     # Decode G5 compressed data to bitmap
     bitmap_data = decode_g5_to_bitmap(payload_data, width, height)
 
-    if output_format == 'bytes':
+    if output_format == "bytes":
         return bitmap_data
-    elif output_format == 'pil':
+    elif output_format == "pil":
         # JavaScript uses tagtype dimensions for offsetRed calculation and display
         return assemble_image_from_bitmap(bitmap_data, tagtype)
     else:
@@ -647,5 +771,5 @@ def process_g5(data: bytes, tagtype: Dict[str, Any], output_format: str = 'pil')
 
 def load_tagtype_from_file(filename: str) -> Dict[str, Any]:
     """Load tagtype specification from JSON file"""
-    with open(filename, 'r') as f:
+    with open(filename, "r") as f:
         return json.load(f)

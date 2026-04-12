@@ -1,8 +1,8 @@
 """Tests for OEPLClient HTTP operations."""
-import json
+
+import aiohttp
 import pytest
 from aioresponses import aioresponses
-import aiohttp
 
 from oepl.client import OEPLClient
 from oepl.enums import LUT, Rotation, TagCommand
@@ -49,8 +49,6 @@ async def test_get_tags_paginated(client, tag_dict):
 async def test_upload_image_multipart(client):
     image_bytes = b"\xff\xd8\xff" + b"\x00" * 100  # minimal fake JPEG
 
-    captured_fields = {}
-
     with aioresponses() as m:
         m.post(f"{BASE}/imgupload", status=200, body=b"ok")
         await client.upload_image(
@@ -68,8 +66,6 @@ async def test_upload_image_multipart(client):
 async def test_upload_image_ttl_conversion(client):
     """ttl=120 seconds → ttl_minutes=2 in the request."""
     image_bytes = b"\xff\xd8\xff" + b"\x00" * 50
-
-    field_data = {}
 
     with aioresponses() as m:
         m.post(f"{BASE}/imgupload", status=200, body=b"ok")

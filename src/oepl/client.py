@@ -1,23 +1,23 @@
 """OEPLClient — async client for the OpenDisplay AP."""
+
 from __future__ import annotations
 
 import asyncio
 import io
 import logging
-from typing import Callable
+from typing import Any, Callable
 
 import aiohttp
 from PIL import Image
 
-from .enums import LUT, Rotation, TagCommand
-from .exceptions import OEPLError
-from .led import LEDPattern
-from .models import APConfig, APInfo, APStatus, Tag
 from ._http import _HTTPClient
+from .enums import LUT, Rotation, TagCommand
+from .led import LEDPattern
+from .models import APConfig, APInfo, APStatus, Tag, TagType
 from .websocket import _WebSocketHandler
 
 try:
-    from epaper_dithering import DitherMode, ColorScheme, dither_image
+    from epaper_dithering import ColorScheme, DitherMode, dither_image
 except ImportError:
     DitherMode = None  # type: ignore[assignment,misc]
     ColorScheme = None  # type: ignore[assignment,misc]
@@ -54,7 +54,7 @@ class OEPLClient:
         self._session: aiohttp.ClientSession = session or aiohttp.ClientSession()
         self._http = _HTTPClient(host, self._session)
         self._ws_handler = _WebSocketHandler(self, reconnect_interval)
-        self._ws_task: asyncio.Task | None = None
+        self._ws_task: asyncio.Task[None] | None = None
         self._connected = False
         self._tags: dict[str, Tag] = {}
 
@@ -218,7 +218,7 @@ class OEPLClient:
 
         ttl_minutes = max(1, ttl // 60) if ttl > 0 else 0
 
-        fields: dict = {
+        fields: dict[str, Any] = {
             "mac": mac.upper(),
             "contentmode": "25",
             "dither": "0",
@@ -246,7 +246,7 @@ class OEPLClient:
         encoded = pattern.encode()
         await self._http.get_text(f"led_flash?mac={mac.upper()}&pattern={encoded}")
 
-    async def get_tag_type(self, hw_type: int) -> "TagType | None":
+    async def get_tag_type(self, hw_type: int) -> TagType | None:
         """Fetch the tag type definition for a given hw_type from the AP.
 
         The AP serves its own copy of tag type definitions under ``/tagtypes/``,
@@ -254,11 +254,11 @@ class OEPLClient:
 
         Returns ``None`` if the AP has no definition for this hw_type (404).
         """
-        from .models import TagType
+        import json
+
         data = await self._http.get_raw(f"tagtypes/{hw_type:02x}.json")
         if data is None:
             return None
-        import json
         return TagType.from_dict(hw_type, json.loads(data))
 
     async def get_image_raw(self, mac: str) -> bytes | None:
