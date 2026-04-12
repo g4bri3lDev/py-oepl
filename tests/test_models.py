@@ -1,6 +1,6 @@
 """Tests for data model parsing."""
 import pytest
-from oepl.models import APStatus, Tag, TagType
+from oepl.models import APConfig, APStatus, Tag, TagType
 from oepl.enums import APState, RunStatus
 
 
@@ -28,6 +28,59 @@ def test_tag_from_dict(tag_dict):
     assert tag.channel == 11
     assert tag.firmware_version == 1337
 
+
+
+def test_tag_labels_known(tag_dict):
+    # tag_dict: contentMode=25, wakeupReason=0, rotate=0, lut=1, capabilities=0
+    tag = Tag.from_dict(tag_dict)
+    assert tag.content_mode_label == "Home Assistant"
+    assert tag.wakeup_reason_label == "Timed"
+    assert tag.rotate_label == "None"
+    assert tag.lut_label == "No repeats"
+    assert tag.capabilities_list == []
+
+
+def test_tag_labels_unknown(tag_dict):
+    tag_dict["contentMode"] = 999
+    tag_dict["wakeupReason"] = 999
+    tag_dict["rotate"] = 99
+    tag_dict["lut"] = 99
+    tag = Tag.from_dict(tag_dict)
+    assert tag.content_mode_label == "999"
+    assert tag.wakeup_reason_label == "999"
+    assert tag.rotate_label == "99"
+    assert tag.lut_label == "99"
+
+
+def test_tag_capabilities_list(tag_dict):
+    tag_dict["capabilities"] = 0x0043  # LED | Compression | NFC
+    tag = Tag.from_dict(tag_dict)
+    assert tag.capabilities_list == ["LED", "Compression", "NFC"]
+
+
+def test_apconfig_labels(apconfig_dict):
+    # apconfig_dict: led=127→50%, tft=128→50%, language=0→English,
+    #                maxsleep=10→10 min, wifipower=78→19.5 dBm
+    cfg = APConfig.from_dict(apconfig_dict)
+    assert cfg.led_brightness_label == "50%"
+    assert cfg.tft_brightness_label == "50%"
+    assert cfg.language_label == "English"
+    assert cfg.max_sleep_label == "10 min"
+    assert cfg.wifi_power_label == "19.5 dBm"
+
+
+def test_apconfig_labels_unknown(apconfig_dict):
+    apconfig_dict["wifipower"] = 99
+    apconfig_dict["led"] = 99
+    apconfig_dict["tft"] = 99
+    apconfig_dict["language"] = 99
+    apconfig_dict["maxsleep"] = 99
+    cfg = APConfig.from_dict(apconfig_dict)
+    assert cfg.wifi_power_label == "99"
+    assert cfg.led_brightness_label == "99"
+    assert cfg.tft_brightness_label == "99"
+    assert cfg.language_label == "99"
+    assert cfg.max_sleep_label == "99 min"
 
 
 def test_apstatus_from_dict():

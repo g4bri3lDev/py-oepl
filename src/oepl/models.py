@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
-from .enums import APState, RunStatus
+from .enums import APState, RunStatus, WakeupReason, ContentMode
 
 
 @dataclass
@@ -32,6 +32,53 @@ class Tag:
     ap_ip: str
     channel: int
     firmware_version: int
+
+    _LUT_NAMES: ClassVar[dict[int, str]] = {
+        0: "Default", 1: "No repeats", 2: "Fast (no reds)", 3: "Fast", 0x10: "OTA",
+    }
+    _ROTATE_NAMES: ClassVar[dict[int, str]] = {0: "None", 1: "90°", 2: "180°", 3: "270°"}
+    _CAPABILITIES: ClassVar[list[tuple[int, str]]] = [
+        (0x0001, "LED"),
+        (0x0002, "Compression"),
+        (0x0004, "Custom LUTs"),
+        (0x0008, "Alt LUT size"),
+        (0x0010, "External power"),
+        (0x0020, "Wake button"),
+        (0x0040, "NFC"),
+        (0x0080, "NFC wake"),
+        (0x0100, "BLE"),
+    ]
+
+    @property
+    def content_mode_label(self) -> str:
+        """Human-readable content mode name."""
+        try:
+            return ContentMode(self.content_mode).name.replace("_", " ").title()
+        except ValueError:
+            return str(self.content_mode)
+
+    @property
+    def wakeup_reason_label(self) -> str:
+        """Human-readable wakeup reason name."""
+        try:
+            return WakeupReason(self.wakeup_reason).name.replace("_", " ").title()
+        except ValueError:
+            return str(self.wakeup_reason)
+
+    @property
+    def lut_label(self) -> str:
+        """Human-readable LUT mode name."""
+        return self._LUT_NAMES.get(self.lut, str(self.lut))
+
+    @property
+    def rotate_label(self) -> str:
+        """Human-readable rotation label."""
+        return self._ROTATE_NAMES.get(self.rotate, str(self.rotate))
+
+    @property
+    def capabilities_list(self) -> list[str]:
+        """Names of all active capability bits."""
+        return [name for bit, name in self._CAPABILITIES if self.capabilities & bit]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Tag":
@@ -166,6 +213,51 @@ class APConfig:
     has_c6: bool
     has_h2: bool
     has_sub_ghz: bool
+
+    _WIFI_POWER_LABELS: ClassVar[dict[int, str]] = {
+        78: "19.5 dBm", 76: "19.0 dBm", 74: "18.5 dBm", 68: "17.0 dBm",
+        60: "15.0 dBm", 52: "13.0 dBm", 44: "11.0 dBm", 34: "8.5 dBm",
+        28: "7.0 dBm", 20: "5.0 dBm", 8: "2.0 dBm",
+    }
+    _LED_BRIGHTNESS_LABELS: ClassVar[dict[int, str]] = {
+        0: "off", 15: "10%", 31: "25%", 127: "50%", 191: "75%", 255: "100%",
+    }
+    _TFT_BRIGHTNESS_LABELS: ClassVar[dict[int, str]] = {
+        0: "off", 20: "10%", 64: "25%", 128: "50%", 192: "75%", 255: "100%",
+    }
+    _MAX_SLEEP_LABELS: ClassVar[dict[int, str]] = {
+        0: "shortest (40 sec)", 5: "5 min", 10: "10 min", 30: "30 min", 60: "1 hour",
+    }
+    _LANGUAGE_LABELS: ClassVar[dict[int, str]] = {
+        0: "English", 1: "Nederlands", 2: "Deutsch", 3: "Norsk", 4: "Français",
+        5: "Čeština", 6: "Slovenčina", 7: "Polski", 8: "Español",
+        9: "Svenska", 10: "Dansk", 11: "Eesti",
+    }
+
+    @property
+    def wifi_power_label(self) -> str:
+        """Transmit power in dBm."""
+        return self._WIFI_POWER_LABELS.get(self.wifi_power, str(self.wifi_power))
+
+    @property
+    def led_brightness_label(self) -> str:
+        """LED brightness as a human-readable percentage."""
+        return self._LED_BRIGHTNESS_LABELS.get(self.led_brightness, str(self.led_brightness))
+
+    @property
+    def tft_brightness_label(self) -> str:
+        """TFT brightness as a human-readable percentage."""
+        return self._TFT_BRIGHTNESS_LABELS.get(self.tft_brightness, str(self.tft_brightness))
+
+    @property
+    def max_sleep_label(self) -> str:
+        """Maximum tag sleep interval in human-readable form."""
+        return self._MAX_SLEEP_LABELS.get(self.max_sleep, f"{self.max_sleep} min")
+
+    @property
+    def language_label(self) -> str:
+        """Display language name."""
+        return self._LANGUAGE_LABELS.get(self.language, str(self.language))
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "APConfig":

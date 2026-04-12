@@ -18,7 +18,7 @@ from rich.tree import Tree
 
 from . import __version__
 from .client import OEPLClient
-from .enums import LUT, Rotation, TagCommand, WakeupReason, ContentMode
+from .enums import LUT, Rotation, TagCommand
 from .exceptions import OEPLConnectionError, OEPLError, OEPLTimeoutError
 from .image import decode_image
 from .led import Color, LEDPattern, LEDSegment
@@ -221,20 +221,6 @@ async def _ap(host: str, output_json: bool) -> None:
         )
         return
 
-    _WIFI_POWER: dict[int, str] = {
-        78: "19.5 dBm", 76: "19.0 dBm", 74: "18.5 dBm", 68: "17.0 dBm",
-        60: "15.0 dBm", 52: "13.0 dBm", 44: "11.0 dBm", 34: "8.5 dBm",
-        28: "7.0 dBm", 20: "5.0 dBm", 8: "2.0 dBm",
-    }
-    _LED_BRIGHT: dict[int, str] = {0: "off", 15: "10%", 31: "25%", 127: "50%", 191: "75%", 255: "100%"}
-    _TFT_BRIGHT: dict[int, str] = {0: "off", 20: "10%", 64: "25%", 128: "50%", 192: "75%", 255: "100%"}
-    _MAX_SLEEP: dict[int, str] = {0: "shortest (40 sec)", 5: "5 min", 10: "10 min", 30: "30 min", 60: "1 hour"}
-    _LANGUAGE: dict[int, str] = {
-        0: "English", 1: "Nederlands", 2: "Deutsch", 3: "Norsk", 4: "Français",
-        5: "Čeština", 6: "Slovenčina", 7: "Polski", 8: "Español",
-        9: "Svenska", 10: "Dansk", 11: "Eesti",
-    }
-
     tree = Tree(f"AP  [bold]{host}[/bold]", guide_style="cyan dim")
 
     hw = tree.add("[bold]Hardware[/bold]")
@@ -249,20 +235,20 @@ async def _ap(host: str, output_json: bool) -> None:
 
     net = tree.add("[bold]Network[/bold]")
     net.add(f"Channel     {cfg.channel}" + (f" / SubGHz {cfg.subghz_channel}" if cfg.has_sub_ghz else ""))
-    net.add(f"WiFi power  {_WIFI_POWER.get(cfg.wifi_power, str(cfg.wifi_power))}")
+    net.add(f"WiFi power  {cfg.wifi_power_label}")
     if cfg.ble_enabled:
         net.add("BLE         [green]enabled[/green]")
 
     disp = tree.add("[bold]Display[/bold]")
     disp.add(f"Alias       {cfg.alias or '—'}")
-    disp.add(f"RGB LED     {_LED_BRIGHT.get(cfg.led_brightness, str(cfg.led_brightness))}")
-    disp.add(f"TFT         {_TFT_BRIGHT.get(cfg.tft_brightness, str(cfg.tft_brightness))}")
-    disp.add(f"Language    {_LANGUAGE.get(cfg.language, str(cfg.language))}")
+    disp.add(f"RGB LED     {cfg.led_brightness_label}")
+    disp.add(f"TFT         {cfg.tft_brightness_label}")
+    disp.add(f"Language    {cfg.language_label}")
     disp.add(f"Preview     {'[green]on[/green]' if cfg.preview else '[dim]off[/dim]'}")
     disp.add(f"Timestamp   {'[green]on[/green]' if cfg.show_timestamp else '[dim]off[/dim]'}")
 
     sched = tree.add("[bold]Schedule[/bold]")
-    sched.add(f"Max sleep           {_MAX_SLEEP.get(cfg.max_sleep, f'{cfg.max_sleep} min')}")
+    sched.add(f"Max sleep           {cfg.max_sleep_label}")
     sched.add(f"Shorten during cfg  {'[green]yes[/green]' if cfg.stop_sleep else '[dim]no[/dim]'}")
     if cfg.sleep_time1 or cfg.sleep_time2:
         sched.add(f"No updates          {cfg.sleep_time1:02d}:00–{cfg.sleep_time2:02d}:00")
@@ -551,37 +537,16 @@ async def _tag(host: str, mac: str, output_json: bool) -> None:
         status.add(f"[yellow]Pending     {tag.pending}[/yellow]")
     status.add(f"Updates     {tag.update_count}")
 
-    _LUT_NAMES = {0: "Default", 1: "No repeats", 2: "Fast (no reds)", 3: "Fast", 0x10: "OTA"}
-    _ROTATE_NAMES = {0: "None", 1: "90°", 2: "180°", 3: "270°"}
-
-    def _enum_label(cls: type, val: int) -> str:
-        try:
-            return cls(val).name.replace("_", " ").title()
-        except ValueError:
-            return str(val)
-
     cfg = tree.add("[bold]Config[/bold]")
-    cfg.add(f"Content mode  {_enum_label(ContentMode, tag.content_mode)}")
-    cfg.add(f"Wakeup reason {_enum_label(WakeupReason, tag.wakeup_reason)}")
-    cfg.add(f"Rotate        {_ROTATE_NAMES.get(tag.rotate, str(tag.rotate))}")
-    cfg.add(f"LUT           {_LUT_NAMES.get(tag.lut, str(tag.lut))}")
+    cfg.add(f"Content mode  {tag.content_mode_label}")
+    cfg.add(f"Wakeup reason {tag.wakeup_reason_label}")
+    cfg.add(f"Rotate        {tag.rotate_label}")
+    cfg.add(f"LUT           {tag.lut_label}")
 
-    _CAPABILITIES = [
-        (0x0001, "LED"),
-        (0x0002, "Compression"),
-        (0x0004, "Custom LUTs"),
-        (0x0008, "Alt LUT size"),
-        (0x0010, "External power"),
-        (0x0020, "Wake button"),
-        (0x0040, "NFC"),
-        (0x0080, "NFC wake"),
-        (0x0100, "BLE"),
-    ]
-    active = [name for bit, name in _CAPABILITIES if tag.capabilities & bit]
     caps_branch = cfg.add(f"Capabilities  0x{tag.capabilities:04x}")
-    for name in active:
+    for name in tag.capabilities_list:
         caps_branch.add(name)
-    if not active:
+    if not tag.capabilities_list:
         caps_branch.add("[dim]none[/dim]")
 
     _console.print(tree)

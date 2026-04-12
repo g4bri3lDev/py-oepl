@@ -16,6 +16,33 @@ def mock_aiohttp():
 
 
 @pytest.fixture
+def apconfig_dict():
+    """Minimal AP config dict as returned by /get_ap_config."""
+    return {
+        "alias": "my-ap",
+        "channel": 11,
+        "subghzchannel": 0,
+        "led": 127,
+        "tft": 128,
+        "language": 0,
+        "maxsleep": 10,
+        "stopsleep": 0,
+        "timezone": "UTC",
+        "preview": 0,
+        "nightlyreboot": 0,
+        "lock": 0,
+        "wifipower": 78,
+        "sleeptime1": 0,
+        "sleeptime2": 0,
+        "ble": 0,
+        "repo": "",
+        "env": "SDEP_EXT_CC1101",
+        "discovery": 1,
+        "showtimestamp": 0,
+    }
+
+
+@pytest.fixture
 def tag_dict():
     """Minimal AP tag dict as returned by /get_db."""
     return {
