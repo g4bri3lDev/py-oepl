@@ -1,13 +1,16 @@
 """Image decoding for OpenDisplay raw image format."""
+
 from __future__ import annotations
 
 import io
 import logging
 import zlib
+from typing import cast
+
 from PIL import Image
 
-from .models import TagType
 from .g5_decoder import parse_g5_header, process_g5
+from .models import TagType
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,13 +39,13 @@ def _decode_esl_raw(data: bytes, tag_type: TagType) -> bytes:
             header_size, width, height, compression_mode = parse_g5_header(data)
             if compression_mode in [1, 2]:
                 tagtype_dict = {
-                    'width': tag_type.width,
-                    'height': tag_type.height,
-                    'bpp': tag_type.bpp,
-                    'rotatebuffer': tag_type.rotatebuffer,
-                    'colortable': tag_type.color_table,
+                    "width": tag_type.width,
+                    "height": tag_type.height,
+                    "bpp": tag_type.bpp,
+                    "rotatebuffer": tag_type.rotatebuffer,
+                    "colortable": tag_type.color_table,
                 }
-                return process_g5(data, tagtype_dict, output_format='bytes')
+                return cast(bytes, process_g5(data, tagtype_dict, output_format="bytes"))
         except Exception as exc:
             _LOGGER.warning("G5 decode failed, falling through to zlib/raw: %s", exc)
 
@@ -63,7 +66,7 @@ def _decode_esl_raw(data: bytes, tag_type: TagType) -> bytes:
     # Check for zlib-compressed data (4-byte little-endian size header)
     try:
         if len(data) >= 4:
-            compressed_size = int.from_bytes(data[:4], byteorder='little')
+            compressed_size = int.from_bytes(data[:4], byteorder="little")
             if compressed_size > 0:
                 compressed_data = data[4:]
                 decompressor = zlib.decompressobj(wbits=15)
@@ -75,22 +78,22 @@ def _decode_esl_raw(data: bytes, tag_type: TagType) -> bytes:
                     second_decompressor = zlib.decompressobj(wbits=15)
                     second_block = second_decompressor.decompress(remaining_data)
 
-                    first_plane = decompressed_data[header_size:header_size + total_size // 2]
-                    second_plane = second_block[header_size:header_size + total_size // 2]
+                    first_plane = decompressed_data[header_size : header_size + total_size // 2]
+                    second_plane = second_block[header_size : header_size + total_size // 2]
                     return first_plane + second_plane
                 else:
                     return decompressed_data[header_size:]
             else:
                 # Uncompressed
                 if len(data) < total_size:
-                    data = data.ljust(total_size, b'\x00')
+                    data = data.ljust(total_size, b"\x00")
                 return data
     except Exception as exc:
         _LOGGER.warning("zlib decode failed, treating as raw bitmap: %s", exc)
 
     # Treat as raw
     if len(data) < total_size:
-        data = data.ljust(total_size, b'\x00')
+        data = data.ljust(total_size, b"\x00")
     return data
 
 
@@ -101,8 +104,9 @@ def _bitmap_to_jpeg(data: bytes, tag_type: TagType) -> bytes:
     if tag_type.rotatebuffer % 2:
         native_width, native_height = native_height, native_width
 
-    img = Image.new('RGB', (native_width, native_height), 'white')
+    img = Image.new("RGB", (native_width, native_height), "white")
     pixels = img.load()
+    assert pixels is not None
 
     color_table = {k: tuple(v) for k, v in tag_type.color_table.items()}
 
@@ -111,7 +115,7 @@ def _bitmap_to_jpeg(data: bytes, tag_type: TagType) -> bytes:
         bytes_per_plane = bytes_per_row * native_height
 
         black_plane = data[:bytes_per_plane]
-        color_plane = data[bytes_per_plane:bytes_per_plane * 2] if tag_type.bpp == 2 else None
+        color_plane = data[bytes_per_plane : bytes_per_plane * 2] if tag_type.bpp == 2 else None
 
         for y in range(native_height):
             row_offset = y * bytes_per_row
@@ -123,14 +127,12 @@ def _bitmap_to_jpeg(data: bytes, tag_type: TagType) -> bytes:
                 color = bool(color_plane[byte_offset] & bit_mask) if color_plane else False
 
                 if black:
-                    pixels[x, y] = color_table['black']
+                    pixels[x, y] = color_table["black"]
                 elif color:
-                    color_key = next(
-                        (k for k in color_table if k not in ('black', 'white')), 'white'
-                    )
+                    color_key = next((k for k in color_table if k not in ("black", "white")), "white")
                     pixels[x, y] = color_table[color_key]
                 else:
-                    pixels[x, y] = color_table['white']
+                    pixels[x, y] = color_table["white"]
     else:
         bits_per_pixel = tag_type.bpp
         bit_mask = (1 << bits_per_pixel) - 1
@@ -166,6 +168,6 @@ def _bitmap_to_jpeg(data: bytes, tag_type: TagType) -> bytes:
         img = img.transpose(Image.Transpose.ROTATE_90)
 
     output = io.BytesIO()
-    img.save(output, format='JPEG', quality=95)
+    img.save(output, format="JPEG", quality=95)
     output.seek(0)
     return output.read()

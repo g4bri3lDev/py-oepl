@@ -1,10 +1,11 @@
 """WebSocket handler for the OpenDisplay AP."""
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 import aiohttp
 

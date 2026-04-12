@@ -1,5 +1,5 @@
 """Tests for LED pattern encoding."""
-import pytest
+
 from oepl.led import Color, LEDPattern, LEDSegment
 
 

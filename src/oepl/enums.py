@@ -1,4 +1,5 @@
 """Enumerations for the oepl library."""
+
 from __future__ import annotations
 
 from enum import Enum, IntEnum
@@ -6,6 +7,7 @@ from enum import Enum, IntEnum
 
 class APState(IntEnum):
     """AP hardware/radio state codes."""
+
     OFFLINE = 0
     ONLINE = 1
     FLASHING = 2
@@ -18,6 +20,7 @@ class APState(IntEnum):
 
 class RunStatus(IntEnum):
     """AP tag-update engine run state."""
+
     STOP = 0
     PAUSE = 1
     RUN = 2
@@ -26,6 +29,7 @@ class RunStatus(IntEnum):
 
 class Rotation(IntEnum):
     """Image rotation applied by the AP before sending to the tag."""
+
     NONE = 0
     R90 = 1
     R180 = 2
@@ -34,6 +38,7 @@ class Rotation(IntEnum):
 
 class LUT(IntEnum):
     """Display refresh LUT (look-up table) mode."""
+
     NO_REPEAT = 0
     DEFAULT = 1
     FAST_NO_REDS = 2
@@ -42,6 +47,7 @@ class LUT(IntEnum):
 
 class TagCommand(str, Enum):
     """Commands that can be sent to a tag via the AP."""
+
     CLEAR = "clear"
     REFRESH = "refresh"
     REBOOT = "reboot"
@@ -50,6 +56,7 @@ class TagCommand(str, Enum):
 
 class WakeupReason(IntEnum):
     """Reason the tag woke up and checked in (from oepl-definitions.h)."""
+
     TIMED = 0x00
     GPIO = 0x02
     NFC = 0x03
@@ -64,6 +71,7 @@ class WakeupReason(IntEnum):
 
 class ContentMode(IntEnum):
     """Content mode assigned to a tag (from contentmanager.cpp)."""
+
     NOT_CONFIGURED = 0
     TODAY = 1
     COUNT_DAYS = 2

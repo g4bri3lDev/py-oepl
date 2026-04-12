@@ -1,7 +1,8 @@
 """LED pattern builder for OpenDisplay AP."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 def _int_to_hex2(n: int) -> str:
@@ -34,9 +35,9 @@ class LEDSegment:
     """One color segment within an LED pattern."""
 
     color: Color
-    flash_speed: float = 0.2   # seconds; AP encodes as floor(speed*10), 1 hex char
-    flash_count: int = 2       # 1 hex char
-    delay: float = 0.0        # seconds after segment; AP encodes as floor(delay*10), 2 hex chars
+    flash_speed: float = 0.2  # seconds; AP encodes as floor(speed*10), 1 hex char
+    flash_count: int = 2  # 1 hex char
+    delay: float = 0.0  # seconds after segment; AP encodes as floor(delay*10), 2 hex chars
 
     def _encode(self) -> str:
         """Encode to 6 hex characters."""
@@ -53,9 +54,9 @@ class LEDPattern:
     """Complete LED pattern sent to the AP via /led_flash."""
 
     segments: list[LEDSegment]  # 1-3 segments; padded to 3 on encode
-    repeats: int = 2            # Number of full-pattern repeats; encoded as repeats-1
-    brightness: int = 2         # 1-16; packed into upper nibble of modebyte
-    flash: bool = False        # Sets the flash bit in modebyte lower nibble
+    repeats: int = 2  # Number of full-pattern repeats; encoded as repeats-1
+    brightness: int = 2  # 1-16; packed into upper nibble of modebyte
+    flash: bool = False  # Sets the flash bit in modebyte lower nibble
 
     def encode(self) -> str:
         """Encode the pattern to a 24-character hex string for the AP.

@@ -1,8 +1,9 @@
 """Low-level async HTTP client for the OpenDisplay AP."""
+
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, cast
 
 import aiohttp
 
@@ -38,9 +39,7 @@ class _HTTPClient:
         **kwargs: Any,
     ) -> aiohttp.ClientResponse:
         try:
-            resp = await self._session.request(
-                method, self._url(path), timeout=timeout, **kwargs
-            )
+            resp = await self._session.request(method, self._url(path), timeout=timeout, **kwargs)
         except aiohttp.ClientError as exc:
             raise OEPLConnectionError(str(exc)) from exc
         except asyncio.TimeoutError as exc:
@@ -56,7 +55,7 @@ class _HTTPClient:
 
     async def get_json(self, path: str) -> dict[str, Any]:
         resp = await self._request("GET", path)
-        return await resp.json(content_type=None)
+        return cast(dict[str, Any], await resp.json(content_type=None))
 
     async def get_text(self, path: str) -> str:
         resp = await self._request("GET", path)
@@ -87,9 +86,7 @@ class _HTTPClient:
                     form.add_field(key, str(value))
 
             try:
-                await self._request(
-                    "POST", path, data=form, timeout=_UPLOAD_TIMEOUT
-                )
+                await self._request("POST", path, data=form, timeout=_UPLOAD_TIMEOUT)
                 return
             except OEPLTimeoutError:
                 if attempt >= _MAX_UPLOAD_RETRIES:
