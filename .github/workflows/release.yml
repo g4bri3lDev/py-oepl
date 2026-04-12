@@ -6,6 +6,9 @@ on:
       - main
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: write
   pull-requests: write
@@ -18,11 +21,7 @@ jobs:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           release-type: python
-          package-name: py-oepl
-          bump-minor-pre-major: true
-          bump-patch-for-minor-pre-major: true
 
       # The following steps only run if a release was created
       - name: Checkout code
