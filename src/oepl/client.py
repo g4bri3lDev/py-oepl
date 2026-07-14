@@ -13,7 +13,7 @@ from PIL import Image
 from ._http import _HTTPClient
 from .enums import LUT, Rotation, TagCommand
 from .led import LEDPattern
-from .models import APConfig, APInfo, APStatus, Tag, TagType
+from .models import APConfig, APInfo, APListItem, APStatus, Tag, TagType, UploadProgress
 from .websocket import _WebSocketHandler
 
 try:
@@ -67,6 +67,11 @@ class OEPLClient:
         self._ap_status_cbs: list[Callable[[APStatus], None]] = []
         self._connection_change_cbs: list[Callable[[bool], None]] = []
         self._log_cbs: list[Callable[[str], None]] = []
+        self._ap_item_cbs: list[Callable[[APListItem], None]] = []
+        self._upload_progress_cbs: list[Callable[[UploadProgress], None]] = []
+        self._touch_cbs: list[Callable[[dict[str, Any]], None]] = []
+        self._console_cbs: list[Callable[[str], None]] = []
+        self._raw_message_cbs: list[Callable[[dict[str, Any]], None]] = []
 
     # ------------------------------------------------------------------
     # Context manager
@@ -96,8 +101,10 @@ class OEPLClient:
             self._ws_task.cancel()
             try:
                 await self._ws_task
-            except (asyncio.CancelledError, Exception):
+            except asyncio.CancelledError:
                 pass
+            except Exception as exc:
+                _LOGGER.debug("WebSocket task raised during disconnect: %s", exc)
             self._ws_task = None
         if self._owned_session and self._session is not None:
             await self._session.close()
@@ -159,6 +166,35 @@ class OEPLClient:
         """Subscribe to log/error messages from the AP WebSocket."""
         self._log_cbs.append(cb)
         return lambda: self._log_cbs.remove(cb)
+
+    def on_ap_item(self, cb: Callable[[APListItem], None]) -> Callable[[], None]:
+        """Subscribe to mesh AP announcement events ('apitem' WS messages)."""
+        self._ap_item_cbs.append(cb)
+        return lambda: self._ap_item_cbs.remove(cb)
+
+    def on_upload_progress(self, cb: Callable[[UploadProgress], None]) -> Callable[[], None]:
+        """Subscribe to image-transfer progress events ('upload' WS messages)."""
+        self._upload_progress_cbs.append(cb)
+        return lambda: self._upload_progress_cbs.remove(cb)
+
+    def on_touch(self, cb: Callable[[dict[str, Any]], None]) -> Callable[[], None]:
+        """Subscribe to touchscreen events ('touch' WS messages, raw dict passthrough)."""
+        self._touch_cbs.append(cb)
+        return lambda: self._touch_cbs.remove(cb)
+
+    def on_console(self, cb: Callable[[str], None]) -> Callable[[], None]:
+        """Subscribe to serial console mirror text ('console' WS messages)."""
+        self._console_cbs.append(cb)
+        return lambda: self._console_cbs.remove(cb)
+
+    def on_raw_message(self, cb: Callable[[dict[str, Any]], None]) -> Callable[[], None]:
+        """Subscribe to every parsed WebSocket message dict, before typed routing.
+
+        This is an escape hatch that fires for all messages, including types
+        this library doesn't know how to parse.
+        """
+        self._raw_message_cbs.append(cb)
+        return lambda: self._raw_message_cbs.remove(cb)
 
     # ------------------------------------------------------------------
     # Tag operations
@@ -394,3 +430,38 @@ class OEPLClient:
                 cb(message)
             except Exception as exc:
                 _LOGGER.debug("on_log callback error: %s", exc)
+
+    def _fire_ap_item(self, item: APListItem) -> None:
+        for cb in list(self._ap_item_cbs):
+            try:
+                cb(item)
+            except Exception as exc:
+                _LOGGER.debug("on_ap_item callback error: %s", exc)
+
+    def _fire_upload_progress(self, progress: UploadProgress) -> None:
+        for cb in list(self._upload_progress_cbs):
+            try:
+                cb(progress)
+            except Exception as exc:
+                _LOGGER.debug("on_upload_progress callback error: %s", exc)
+
+    def _fire_touch(self, data: dict[str, Any]) -> None:
+        for cb in list(self._touch_cbs):
+            try:
+                cb(data)
+            except Exception as exc:
+                _LOGGER.debug("on_touch callback error: %s", exc)
+
+    def _fire_console(self, text: str) -> None:
+        for cb in list(self._console_cbs):
+            try:
+                cb(text)
+            except Exception as exc:
+                _LOGGER.debug("on_console callback error: %s", exc)
+
+    def _fire_raw_message(self, data: dict[str, Any]) -> None:
+        for cb in list(self._raw_message_cbs):
+            try:
+                cb(data)
+            except Exception as exc:
+                _LOGGER.debug("on_raw_message callback error: %s", exc)

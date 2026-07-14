@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import aiohttp
 
-from .models import APStatus, Tag
+from .models import APListItem, APStatus, Tag, UploadProgress
 
 if TYPE_CHECKING:
     from .client import OEPLClient
@@ -47,7 +47,9 @@ class _WebSocketHandler:
                         try:
                             msg = await ws.receive()
                             if msg.type == aiohttp.WSMsgType.TEXT:
-                                await self._handle_message(msg.data)
+                                should_disconnect = await self._handle_message(msg.data)
+                                if should_disconnect:
+                                    break
                             elif msg.type in (
                                 aiohttp.WSMsgType.ERROR,
                                 aiohttp.WSMsgType.CLOSING,
@@ -73,30 +75,36 @@ class _WebSocketHandler:
                 _LOGGER.debug("Reconnecting in %s seconds", self._reconnect_interval)
                 await asyncio.sleep(self._reconnect_interval)
 
-    async def _handle_message(self, raw: str) -> None:
+    async def _handle_message(self, raw: str) -> bool:
         """Parse and route a raw WebSocket message from the AP.
 
-        The AP prepends garbage bytes before the JSON object, so we strip
-        everything up to and including the first '{'.
+        Returns ``True`` if the caller should break out of the receive loop
+        (currently only after an ``errMsg: REBOOTING`` notification, so the
+        outer loop in :meth:`run` reconnects).
         """
         try:
-            data = json.loads("{" + raw.split("{", 1)[-1])
+            data = json.loads(raw)
         except json.JSONDecodeError:
             _LOGGER.debug("Could not parse WebSocket message: %.80s", raw)
-            return
+            return False
+
+        self._client._fire_raw_message(data)
 
         if "tags" in data:
-            for tag_data in data["tags"]:
-                tag = Tag.from_dict(tag_data)
-                self._client._tags[tag.mac] = tag
-                self._client._fire_tag_update(tag)
+            try:
+                for tag_data in data["tags"]:
+                    tag = Tag.from_dict(tag_data)
+                    self._client._tags[tag.mac] = tag
+                    self._client._fire_tag_update(tag)
+            except Exception as exc:
+                _LOGGER.warning("Could not parse 'tags' WebSocket message: %s", exc)
 
         elif "sys" in data:
             try:
                 status = APStatus.from_dict(data["sys"])
                 self._client._fire_ap_status(status)
             except Exception as exc:
-                _LOGGER.debug("Could not parse sys message: %s", exc)
+                _LOGGER.warning("Could not parse 'sys' WebSocket message: %s", exc)
 
         elif "logMsg" in data:
             self._client._fire_log(data["logMsg"])
@@ -107,13 +115,33 @@ class _WebSocketHandler:
             if msg == "REBOOTING":
                 _LOGGER.info("AP is rebooting; waiting before reconnecting")
                 self._client._set_connected(False)
-                # Wait extra time for the AP to come back up, then break out of
-                # the inner receive loop so the outer loop reconnects.
+                # Wait extra time for the AP to come back up, then signal the
+                # caller to break out of the inner receive loop so the outer
+                # loop reconnects.
                 await asyncio.sleep(5)
+                return True
 
         elif "apitem" in data:
-            # Config change notifications are ignored; callers re-fetch on demand.
-            pass
+            try:
+                item = APListItem.from_dict(data["apitem"])
+                self._client._fire_ap_item(item)
+            except Exception as exc:
+                _LOGGER.warning("Could not parse 'apitem' WebSocket message: %s", exc)
+
+        elif "upload" in data:
+            try:
+                progress = UploadProgress.from_dict(data["upload"])
+                self._client._fire_upload_progress(progress)
+            except Exception as exc:
+                _LOGGER.warning("Could not parse 'upload' WebSocket message: %s", exc)
+
+        elif "touch" in data:
+            self._client._fire_touch(data["touch"])
+
+        elif "console" in data:
+            self._client._fire_console(data["console"])
 
         else:
             _LOGGER.debug("Unknown WebSocket message type: %s", list(data.keys()))
+
+        return False
