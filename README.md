@@ -195,11 +195,12 @@ await client.save_tag_config(
 from oepl import TagCommand
 await client.send_tag_cmd("AABBCCDDEEFF", TagCommand.REFRESH)
 
-# Delete a tag (removes it from the AP's database and the local cache)
+# Delete a single tag (removes it from the AP's database and the local cache)
 await client.delete_tag("AABBCCDDEEFF")
-# purge=True sends TagCommand.PURGE instead — note this bulk-deletes *all* stale
-# tags on the AP, not just this one (see TagCommand.PURGE docstring)
-await client.delete_tag("AABBCCDDEEFF", purge=True)
+
+# Bulk-delete ALL stale tags AP-wide (never checked in, unseen for 24h, or
+# >10min overdue) — cannot be scoped to one tag; refreshes the local cache
+await client.purge_stale_tags()
 
 # Flash LEDs
 from oepl import Color, LEDPattern

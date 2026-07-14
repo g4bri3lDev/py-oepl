@@ -410,26 +410,47 @@ class OEPLClient:
         """Send a command to a tag (clear, refresh, reboot, scan, ...)."""
         await self._http.post_form("tag_cmd", {"mac": mac.upper(), "cmd": cmd.value})
 
-    async def delete_tag(self, mac: str, *, purge: bool = False) -> None:
-        """Delete a tag record from the AP.
+    async def delete_tag(self, mac: str) -> None:
+        """Delete a single tag record from the AP's database.
 
-        Sends ``TagCommand.PURGE`` if *purge* else ``TagCommand.DEL`` via
-        :meth:`send_tag_cmd`, then removes *mac* from the local tag cache.
+        Sends ``TagCommand.DEL`` via :meth:`send_tag_cmd`, then removes
+        *mac* from the local tag cache. The firmware sends no WebSocket
+        message for tag deletion (``SYNC_DELETE`` only goes out over the
+        mesh radio protocol, not to web clients), so the cache update here
+        is the only signal this library gets.
 
-        Note: the firmware's ``purge`` command, despite requiring a valid
-        *mac* to reach the handler, ignores that MAC for the actual delete —
-        it bulk-removes every stale/expired tag in the AP's database (see
-        :attr:`TagCommand.PURGE`). This method only removes the *mac* you
-        passed from the local cache; other tags the AP purged server-side
-        will linger in :attr:`tags` until the next :meth:`get_tags` call.
-
-        The firmware sends no WebSocket message for tag deletion (only a
-        ``SYNC_DELETE`` proto to the mesh radio, not to web clients), so the
-        cache update here is the only signal this library gets.
+        To bulk-delete stale tags, see :meth:`purge_stale_tags`.
         """
-        cmd = TagCommand.PURGE if purge else TagCommand.DEL
-        await self.send_tag_cmd(mac, cmd)
+        await self.send_tag_cmd(mac, TagCommand.DEL)
         self._tags.pop(mac.upper(), None)
+
+    async def purge_stale_tags(self) -> None:
+        """Delete ALL stale tags from the AP's database. Cannot be scoped to one tag.
+
+        Sends ``TagCommand.PURGE``. The firmware deletes every tag that
+        never checked in, hasn't been seen for 24 hours, or is more than 10
+        minutes overdue for its expected checkin — the entire database is
+        swept in one go (``/tag_cmd`` handler, ``purge`` branch).
+
+        The firmware's parameter guard still requires a ``mac`` form field
+        naming a *currently registered* tag just to reach the command branch
+        (it responds 400 "Error: mac not found" otherwise), even though the
+        purge itself ignores that MAC. This method therefore first fetches
+        the tag list and sends the MAC of an arbitrary registered tag; if
+        the AP has no tags at all, there is nothing to purge (and no valid
+        MAC to send), so it returns without issuing the command.
+
+        The firmware sends no WebSocket deletion messages to web clients, so
+        after the purge this method clears the local tag cache and re-fetches
+        it via :meth:`get_tags` (firing ``on_tag_update`` for each surviving
+        tag) so :attr:`tags` reflects the server-side deletions.
+        """
+        tags = await self.get_tags()
+        if not tags:
+            return
+        await self.send_tag_cmd(tags[0].mac, TagCommand.PURGE)
+        self._tags.clear()
+        await self.get_tags()
 
     async def set_led(self, mac: str, pattern: LEDPattern) -> None:
         """Flash an LED pattern on a tag."""
