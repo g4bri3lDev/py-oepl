@@ -1,4 +1,4 @@
-"""LED pattern builder for OpenDisplay AP."""
+"""LED pattern builder for OpenEPaperLink AP."""
 
 from __future__ import annotations
 

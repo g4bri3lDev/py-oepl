@@ -1,4 +1,4 @@
-"""oepl — async Python client for the OpenDisplay AP."""
+"""oepl — async Python client for the OpenEPaperLink AP."""
 
 __version__ = "0.1.0"
 from .client import OEPLClient

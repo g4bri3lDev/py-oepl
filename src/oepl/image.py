@@ -1,4 +1,4 @@
-"""Image decoding for OpenDisplay raw image format."""
+"""Image decoding for OpenEPaperLink raw image format."""
 
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 """
 G5 Image Decoder - Python port of JavaScript G5 decoder
-A 1-bpp image decoder for OpenDisplay displays
+A 1-bpp image decoder for OpenEPaperLink displays
 
 Original JavaScript version by Larry Bank, Nic Limper
 Python port with complete image assembly pipeline

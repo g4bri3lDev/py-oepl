@@ -12,11 +12,14 @@ from collections.abc import Coroutine
 from datetime import datetime, timezone
 from typing import Any, NoReturn
 
-from rich.console import Console
-from rich.logging import RichHandler
-from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.table import Table
-from rich.tree import Tree
+try:
+    from rich.console import Console
+    from rich.logging import RichHandler
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+    from rich.table import Table
+    from rich.tree import Tree
+except ImportError:
+    sys.exit("The oepl CLI requires the 'cli' extra: pip install py-oepl[cli]")
 
 from . import __version__
 from .client import OEPLClient

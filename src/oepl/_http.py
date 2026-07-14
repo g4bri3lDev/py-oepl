@@ -1,4 +1,4 @@
-"""Low-level async HTTP client for the OpenDisplay AP."""
+"""Low-level async HTTP client for the OpenEPaperLink AP."""
 
 from __future__ import annotations
 

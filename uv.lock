@@ -847,13 +847,18 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
-    { name = "epaper-dithering" },
     { name = "numpy" },
     { name = "pillow" },
-    { name = "rich" },
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "epaper-dithering" },
+    { name = "rich" },
+]
+cli = [
+    { name = "rich" },
+]
 dev = [
     { name = "aioresponses" },
     { name = "mypy" },
@@ -863,12 +868,16 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
+dither = [
+    { name = "epaper-dithering" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.9" },
     { name = "aioresponses", marker = "extra == 'dev'", specifier = ">=0.7.8" },
-    { name = "epaper-dithering", specifier = ">=0.6.4" },
+    { name = "epaper-dithering", marker = "extra == 'all'", specifier = ">=0.6.4" },
+    { name = "epaper-dithering", marker = "extra == 'dither'", specifier = ">=0.6.4" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0" },
     { name = "numpy", specifier = ">=1.20" },
     { name = "pillow", specifier = ">=10.0" },
@@ -876,10 +885,11 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.3" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
-    { name = "rich", specifier = ">=14.3.4" },
+    { name = "rich", marker = "extra == 'all'", specifier = ">=14.3.4" },
+    { name = "rich", marker = "extra == 'cli'", specifier = ">=14.3.4" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["cli", "dither", "all", "dev"]
 
 [[package]]
 name = "pygments"
