@@ -1,6 +1,6 @@
 """Tests for wire-format enum values."""
 
-from oepl.enums import LUT, ContentMode, enum_label
+from oepl.enums import LUT, ContentMode, TagCommand, enum_label
 
 
 def test_lut_values_match_firmware():
@@ -37,3 +37,18 @@ def test_enum_label_multi_word_member():
 
 def test_enum_label_unknown_member():
     assert enum_label(ContentMode(99)) == "Unknown 0x63"
+
+
+def test_tag_command_values_match_firmware():
+    # OpenEpaperLink/ESP32_AP-Flasher/src/web.cpp:429-521 (/tag_cmd handler)
+    assert TagCommand.DEL == "del"
+    assert TagCommand.PURGE == "purge"
+    assert TagCommand.CLEAR == "clear"
+    assert TagCommand.REFRESH == "refresh"
+    assert TagCommand.REBOOT == "reboot"
+    assert TagCommand.SCAN == "scan"
+    assert TagCommand.RESET == "reset"
+    assert TagCommand.DEEPSLEEP == "deepsleep"
+    assert TagCommand.LEDFLASH == "ledflash"
+    assert TagCommand.LEDFLASH_LONG == "ledflash_long"
+    assert TagCommand.LEDFLASH_STOP == "ledflash_stop"

@@ -234,6 +234,230 @@ async def test_send_tag_cmd(client):
 
 
 @pytest.mark.asyncio
+async def test_delete_tag_default_sends_del(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/tag_cmd", status=200, body="Ok, done")
+        client._tags["AABBCCDDEEFF"] = object()  # sentinel; only presence/absence matters
+        await client.delete_tag("AABBCCDDEEFF")
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/tag_cmd"))]
+    assert len(calls) == 1
+    assert calls[0].kwargs["data"] == {"mac": "AABBCCDDEEFF", "cmd": "del"}
+    assert "AABBCCDDEEFF" not in client._tags
+
+
+@pytest.mark.asyncio
+async def test_delete_tag_purge_sends_purge(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/tag_cmd", status=200, body="Ok, done")
+        client._tags["AABBCCDDEEFF"] = object()
+        await client.delete_tag("AABBCCDDEEFF", purge=True)
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/tag_cmd"))]
+    assert calls[0].kwargs["data"] == {"mac": "AABBCCDDEEFF", "cmd": "purge"}
+    assert "AABBCCDDEEFF" not in client._tags
+
+
+@pytest.mark.asyncio
+async def test_delete_tag_missing_from_cache_is_noop(client):
+    """Deleting a MAC not currently in the cache must not raise (cache is best-effort)."""
+    with aioresponses() as m:
+        m.post(f"{BASE}/tag_cmd", status=200, body="Ok, done")
+        await client.delete_tag("AABBCCDDEEFF")
+
+
+@pytest.mark.asyncio
+async def test_get_tag_found(client, real_tag_dict):
+    with aioresponses() as m:
+        m.get(f"{BASE}/get_db?mac=00000335042F3E10", payload={"tags": [real_tag_dict]})
+        tag = await client.get_tag("00000335042F3E10")
+
+    assert tag is not None
+    assert tag.mac == "00000335042F3E10"
+    assert tag.alias == "MVG 22"
+    assert client._tags["00000335042F3E10"] is tag
+
+
+@pytest.mark.asyncio
+async def test_get_tag_found_fires_callback(client, real_tag_dict):
+    received = []
+    client.on_tag_update(received.append)
+
+    with aioresponses() as m:
+        m.get(f"{BASE}/get_db?mac=00000335042F3E10", payload={"tags": [real_tag_dict]})
+        await client.get_tag("00000335042F3E10")
+
+    assert len(received) == 1
+    assert received[0].mac == "00000335042F3E10"
+
+
+@pytest.mark.asyncio
+async def test_get_tag_not_found_returns_none(client):
+    with aioresponses() as m:
+        m.get(f"{BASE}/get_db?mac=AABBCCDDEEFF", payload={"tags": []})
+        tag = await client.get_tag("aabbccddeeff")
+
+    assert tag is None
+
+
+@pytest.mark.asyncio
+async def test_save_tag_config_only_passed_fields(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/save_cfg", status=200, body="Ok, saved")
+        await client.save_tag_config("AABBCCDDEEFF", alias="my-tag")
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/save_cfg"))]
+    data = calls[0].kwargs["data"]
+    assert data == {"mac": "AABBCCDDEEFF", "alias": "my-tag"}
+
+
+@pytest.mark.asyncio
+async def test_save_tag_config_all_fields(client):
+    from oepl.enums import ContentMode
+
+    with aioresponses() as m:
+        m.post(f"{BASE}/save_cfg", status=200, body="Ok, saved")
+        await client.save_tag_config(
+            "AABBCCDDEEFF",
+            content_mode=ContentMode.TODAY,
+            alias="my-tag",
+            mode_cfg_json={"a": 1},
+            rotate=Rotation.R180,
+            lut=LUT.FAST,
+            invert=True,
+        )
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/save_cfg"))]
+    data = calls[0].kwargs["data"]
+    assert data["mac"] == "AABBCCDDEEFF"
+    assert data["contentmode"] == "1"
+    assert data["alias"] == "my-tag"
+    assert data["modecfgjson"] == '{"a": 1}'
+    assert data["rotate"] == "2"
+    assert data["lut"] == "3"
+    assert data["invert"] == "1"
+
+
+@pytest.mark.asyncio
+async def test_save_tag_config_mode_cfg_json_string_passthrough(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/save_cfg", status=200, body="Ok, saved")
+        await client.save_tag_config("AABBCCDDEEFF", mode_cfg_json='{"raw":"1"}')
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/save_cfg"))]
+    assert calls[0].kwargs["data"]["modecfgjson"] == '{"raw":"1"}'
+
+
+@pytest.mark.asyncio
+async def test_save_tag_config_content_mode_int_passthrough(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/save_cfg", status=200, body="Ok, saved")
+        await client.save_tag_config("AABBCCDDEEFF", content_mode=24)
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/save_cfg"))]
+    assert calls[0].kwargs["data"]["contentmode"] == "24"
+
+
+@pytest.mark.asyncio
+async def test_save_tag_config_no_fields_sends_only_mac(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/save_cfg", status=200, body="Ok, saved")
+        await client.save_tag_config("AABBCCDDEEFF")
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/save_cfg"))]
+    assert calls[0].kwargs["data"] == {"mac": "AABBCCDDEEFF"}
+
+
+@pytest.mark.asyncio
+async def test_save_tag_config_raises_on_ap_error_body(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/save_cfg", status=200, body="Error while saving: mac not found")
+        with pytest.raises(OEPLResponseError) as exc_info:
+            await client.save_tag_config("DEADBEEFDEAD", alias="x")
+
+    assert exc_info.value.status == 200
+    assert exc_info.value.body == "Error while saving: mac not found"
+
+
+@pytest.mark.asyncio
+async def test_set_alias_delegates_to_save_tag_config(client, monkeypatch):
+    calls = []
+
+    async def fake_save_tag_config(mac, **kwargs):
+        calls.append((mac, kwargs))
+
+    monkeypatch.setattr(client, "save_tag_config", fake_save_tag_config)
+    await client.set_alias("AABBCCDDEEFF", "my-display")
+
+    assert calls == [("AABBCCDDEEFF", {"alias": "my-display"})]
+
+
+@pytest.mark.asyncio
+async def test_upload_json_dict(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/jsonupload", status=200, body="Ok, saved")
+        await client.upload_json("AABBCCDDEEFF", {"foo": "bar"}, ttl=60)
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/jsonupload"))]
+    data = calls[0].kwargs["data"]
+    assert data["mac"] == "AABBCCDDEEFF"
+    assert data["json"] == '{"foo": "bar"}'
+    assert data["ttl"] == "60"
+
+
+@pytest.mark.asyncio
+async def test_upload_json_string_passthrough(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/jsonupload", status=200, body="Ok, saved")
+        await client.upload_json("AABBCCDDEEFF", '{"raw":true}')
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/jsonupload"))]
+    data = calls[0].kwargs["data"]
+    assert data["json"] == '{"raw":true}'
+    assert data["ttl"] == "0"
+
+
+@pytest.mark.asyncio
+async def test_upload_json_raises_on_ap_error_body(client):
+    """The AP reports an unknown MAC for /jsonupload as a genuine HTTP 400 (unlike /save_cfg's 200)."""
+    with aioresponses() as m:
+        m.post(f"{BASE}/jsonupload", status=400, body="mac not found in tagDB")
+        with pytest.raises(OEPLResponseError):
+            await client.upload_json("DEADBEEFDEAD", {"a": 1})
+
+
+@pytest.mark.asyncio
+async def test_get_image_data_bytes_passthrough(client):
+    with aioresponses() as m:
+        m.get(f"{BASE}/getdata?mac=AABBCCDDEEFF", status=200, body=b"\x01\x02\x03")
+        data = await client.get_image_data("AABBCCDDEEFF")
+
+    assert data == b"\x01\x02\x03"
+
+
+@pytest.mark.asyncio
+async def test_get_image_data_404_returns_none(client):
+    with aioresponses() as m:
+        m.get(f"{BASE}/getdata?mac=AABBCCDDEEFF", status=404)
+        data = await client.get_image_data("AABBCCDDEEFF")
+
+    assert data is None
+
+
+@pytest.mark.asyncio
+async def test_get_image_data_md5_param_included(client):
+    with aioresponses() as m:
+        m.get(
+            f"{BASE}/getdata?mac=AABBCCDDEEFF&md5=deadbeefdeadbeef",
+            status=200,
+            body=b"\xff",
+        )
+        data = await client.get_image_data("AABBCCDDEEFF", md5="deadbeefdeadbeef")
+
+    assert data == b"\xff"
+
+
+@pytest.mark.asyncio
 async def test_set_led(client):
     pattern = LEDPattern([LEDSegment(Color(255, 0, 0))])
     encoded = pattern.encode()

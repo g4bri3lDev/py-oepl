@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 from typing import Any, Callable
 
@@ -11,7 +12,7 @@ import aiohttp
 from PIL import Image
 
 from ._http import _HTTPClient
-from .enums import LUT, Rotation, TagCommand
+from .enums import LUT, ContentMode, Rotation, TagCommand
 from .led import LEDPattern
 from .models import APConfig, APInfo, APListItem, APStatus, Tag, TagType, UploadProgress
 from .websocket import _WebSocketHandler
@@ -222,6 +223,23 @@ class OEPLClient:
             pos = cont
         return result
 
+    async def get_tag(self, mac: str) -> Tag | None:
+        """Fetch a single tag from the AP database by MAC.
+
+        Updates the internal tag cache and fires ``on_tag_update`` on success,
+        consistent with :meth:`get_tags`. Returns ``None`` if the AP has no
+        record for this MAC (``/get_db?mac=...`` responds with an empty
+        ``tags`` list rather than 404).
+        """
+        data = await self._http.get_json(f"get_db?mac={mac.upper()}")
+        tags = data.get("tags", [])
+        if not tags:
+            return None
+        tag = Tag.from_dict(tags[0])
+        self._tags[tag.mac] = tag
+        self._fire_tag_update(tag)
+        return tag
+
     async def upload_image(
         self,
         mac: str,
@@ -335,13 +353,83 @@ class OEPLClient:
 
         await self._http.post_multipart("imgupload", fields)
 
+    async def save_tag_config(
+        self,
+        mac: str,
+        *,
+        content_mode: ContentMode | int | None = None,
+        alias: str | None = None,
+        mode_cfg_json: dict[str, Any] | str | None = None,
+        rotate: Rotation | None = None,
+        lut: LUT | None = None,
+        invert: bool | None = None,
+    ) -> None:
+        """Update a tag's stored configuration via ``/save_cfg``.
+
+        All keyword fields are omission-sensitive: the AP only touches the
+        fields present in the POST body (``request->hasParam(...)`` per
+        field), so omitted arguments leave the tag's existing configuration
+        untouched. Passing no keyword arguments sends only ``mac`` and is a
+        no-op on the AP.
+
+        Args:
+            mac: Tag MAC address (case-insensitive).
+            content_mode: New content mode for the tag.
+            alias: New display alias.
+            mode_cfg_json: Content-mode-specific config. A ``dict`` is
+                serialized with ``json.dumps``; a ``str`` is sent as-is.
+            rotate: Image rotation.
+            lut: Display refresh LUT mode.
+            invert: Invert the image colors.
+
+        Raises:
+            OEPLResponseError: If the AP reports the MAC was not found
+                (``200 "Error while saving: mac not found"``).
+        """
+        fields: dict[str, Any] = {"mac": mac.upper()}
+        if content_mode is not None:
+            fields["contentmode"] = str(int(content_mode))
+        if alias is not None:
+            fields["alias"] = alias
+        if mode_cfg_json is not None:
+            fields["modecfgjson"] = json.dumps(mode_cfg_json) if isinstance(mode_cfg_json, dict) else mode_cfg_json
+        if rotate is not None:
+            fields["rotate"] = str(rotate.value)
+        if lut is not None:
+            fields["lut"] = str(lut.value)
+        if invert is not None:
+            fields["invert"] = "1" if invert else "0"
+
+        await self._http.post_form("save_cfg", fields)
+
     async def set_alias(self, mac: str, alias: str) -> None:
         """Set the display alias for a tag."""
-        await self._http.post_form("save_cfg", {"mac": mac.upper(), "alias": alias})
+        await self.save_tag_config(mac, alias=alias)
 
     async def send_tag_cmd(self, mac: str, cmd: TagCommand) -> None:
-        """Send a command to a tag (clear, refresh, reboot, scan)."""
+        """Send a command to a tag (clear, refresh, reboot, scan, ...)."""
         await self._http.post_form("tag_cmd", {"mac": mac.upper(), "cmd": cmd.value})
+
+    async def delete_tag(self, mac: str, *, purge: bool = False) -> None:
+        """Delete a tag record from the AP.
+
+        Sends ``TagCommand.PURGE`` if *purge* else ``TagCommand.DEL`` via
+        :meth:`send_tag_cmd`, then removes *mac* from the local tag cache.
+
+        Note: the firmware's ``purge`` command, despite requiring a valid
+        *mac* to reach the handler, ignores that MAC for the actual delete —
+        it bulk-removes every stale/expired tag in the AP's database (see
+        :attr:`TagCommand.PURGE`). This method only removes the *mac* you
+        passed from the local cache; other tags the AP purged server-side
+        will linger in :attr:`tags` until the next :meth:`get_tags` call.
+
+        The firmware sends no WebSocket message for tag deletion (only a
+        ``SYNC_DELETE`` proto to the mesh radio, not to web clients), so the
+        cache update here is the only signal this library gets.
+        """
+        cmd = TagCommand.PURGE if purge else TagCommand.DEL
+        await self.send_tag_cmd(mac, cmd)
+        self._tags.pop(mac.upper(), None)
 
     async def set_led(self, mac: str, pattern: LEDPattern) -> None:
         """Flash an LED pattern on a tag."""
@@ -356,8 +444,6 @@ class OEPLClient:
 
         Returns ``None`` if the AP has no definition for this hw_type (404).
         """
-        import json
-
         data = await self._http.get_raw(f"tagtypes/{hw_type:02X}.json")
         if data is None:
             return None
@@ -370,6 +456,55 @@ class OEPLClient:
         Callers are responsible for decoding with :func:`oepl.decode_image`.
         """
         return await self._http.get_raw(f"current/{mac.upper()}.raw")
+
+    async def upload_json(self, mac: str, data: dict[str, Any] | str, *, ttl: int = 0) -> None:
+        """Push a JSON payload to a tag for content mode 19 (JSON/custom rendering).
+
+        POSTs to ``/jsonupload`` (``doJsonUpload``, web.cpp:1023-1060). The AP
+        writes *data* verbatim to ``/current/<mac>.json`` on its filesystem,
+        sets the tag's content mode to ``19``, and stores
+        ``{"filename": "/current/<mac>.json", "interval": "<ttl>"}`` as the
+        tag's ``modecfgjson``. Unlike ``upload_image``'s ``ttl`` (converted to
+        minutes), *ttl* here is passed straight through as the raw
+        ``interval`` value the firmware writes — verify the unit against the
+        content-mode-19 renderer if precise timing matters; the endpoint
+        itself performs no conversion.
+
+        Args:
+            mac: Tag MAC address (case-insensitive).
+            data: JSON payload. A ``dict`` is serialized with ``json.dumps``;
+                a ``str`` is sent as-is (must already be valid JSON).
+            ttl: Value stored verbatim as the tag's ``interval`` config field.
+                ``0`` means unset/default.
+
+        Raises:
+            OEPLResponseError: If the AP reports the MAC was not found.
+        """
+        json_str = json.dumps(data) if isinstance(data, dict) else data
+        await self._http.post_form(
+            "jsonupload",
+            {"mac": mac.upper(), "json": json_str, "ttl": str(ttl)},
+        )
+
+    async def get_image_data(self, mac: str, *, md5: str | None = None) -> bytes | None:
+        """Fetch the raw image bytes queued/stored for a tag from ``/getdata``.
+
+        Without *md5*, returns the tag's currently stored image
+        (``taginfo->data``/``taginfo->filename``) — the "older version
+        without queue" path in the firmware. With *md5* (an 8-byte hash as
+        hex, matching a queued image's content hash), looks up that specific
+        queued item instead, letting callers fetch a not-yet-delivered image
+        version by its hash rather than whatever is currently live.
+
+        Returns ``None`` if the AP responds 404 (no queue item for that
+        *md5*, or no file backing the stored/queued image). Note the AP also
+        returns a plain-text 400 (not 404) if *mac* is missing/malformed or
+        unknown to the AP entirely; that surfaces as ``OEPLResponseError``.
+        """
+        path = f"getdata?mac={mac.upper()}"
+        if md5 is not None:
+            path += f"&md5={md5}"
+        return await self._http.get_raw(path)
 
     # ------------------------------------------------------------------
     # AP operations
