@@ -5,7 +5,28 @@ from __future__ import annotations
 from enum import Enum, IntEnum
 
 
-class APState(IntEnum):
+class OEPLIntEnum(IntEnum):
+    """IntEnum that synthesizes UNKNOWN_0xNN pseudo-members for unrecognized values.
+
+    Firmware evolves faster than this library: new wire-protocol values must
+    never raise ``ValueError`` during parsing. Unrecognized ints are turned
+    into cached pseudo-members (``UNKNOWN_0x63`` for ``99``) that still behave
+    like real ``IntEnum`` members for comparison, ``int()``, and identity.
+    """
+
+    @classmethod
+    def _missing_(cls, value: object) -> "OEPLIntEnum | None":
+        if not isinstance(value, int):
+            return None
+        member = int.__new__(cls, value)
+        member._name_ = f"UNKNOWN_0x{value:02X}"
+        member._value_ = value
+        # cache so identity/equality behave like real members
+        cls._value2member_map_[value] = member
+        return member
+
+
+class APState(OEPLIntEnum):
     """AP hardware/radio state codes."""
 
     OFFLINE = 0
@@ -18,7 +39,7 @@ class APState(IntEnum):
     NO_RADIO = 7
 
 
-class RunStatus(IntEnum):
+class RunStatus(OEPLIntEnum):
     """AP tag-update engine run state."""
 
     STOP = 0
@@ -27,7 +48,7 @@ class RunStatus(IntEnum):
     INIT = 3
 
 
-class Rotation(IntEnum):
+class Rotation(OEPLIntEnum):
     """Image rotation applied by the AP before sending to the tag."""
 
     NONE = 0
@@ -36,7 +57,7 @@ class Rotation(IntEnum):
     R270 = 3
 
 
-class LUT(IntEnum):
+class LUT(OEPLIntEnum):
     """Display refresh LUT (look-up table) mode.
 
     Values match firmware (``OpenEpaperLink/oepl-definitions.h``).
@@ -58,7 +79,7 @@ class TagCommand(str, Enum):
     SCAN = "scan"
 
 
-class WakeupReason(IntEnum):
+class WakeupReason(OEPLIntEnum):
     """Reason the tag woke up and checked in (from oepl-definitions.h)."""
 
     TIMED = 0x00
@@ -73,7 +94,7 @@ class WakeupReason(IntEnum):
     WDT_RESET = 0xFE
 
 
-class ContentMode(IntEnum):
+class ContentMode(OEPLIntEnum):
     """Content mode assigned to a tag (from contentmanager.cpp)."""
 
     NOT_CONFIGURED = 0
@@ -103,3 +124,11 @@ class ContentMode(IntEnum):
     TIMESTAMP = 26
     DAY_AHEAD = 27
     TIME_RAW = 29
+
+
+def enum_label(member: IntEnum) -> str:
+    """Human-readable label: FAST_NO_REDS -> 'Fast No Reds', UNKNOWN_0x63 -> 'Unknown 0x63'."""
+    name = member.name
+    if name.startswith("UNKNOWN_0x"):
+        return f"Unknown 0x{int(member):02X}"
+    return name.replace("_", " ").title()

@@ -20,7 +20,7 @@ from rich.tree import Tree
 
 from . import __version__
 from .client import OEPLClient
-from .enums import LUT, Rotation, TagCommand
+from .enums import LUT, Rotation, TagCommand, enum_label
 from .exceptions import OEPLConnectionError, OEPLError, OEPLTimeoutError
 from .image import decode_image
 from .led import Color, LEDPattern, LEDSegment
@@ -547,10 +547,10 @@ async def _tag(host: str, mac: str, output_json: bool) -> None:
     status.add(f"Updates     {tag.update_count}")
 
     cfg = tree.add("[bold]Config[/bold]")
-    cfg.add(f"Content mode  {tag.content_mode_label}")
-    cfg.add(f"Wakeup reason {tag.wakeup_reason_label}")
-    cfg.add(f"Rotate        {tag.rotate_label}")
-    cfg.add(f"LUT           {tag.lut_label}")
+    cfg.add(f"Content mode  {enum_label(tag.content_mode)}")
+    cfg.add(f"Wakeup reason {enum_label(tag.wakeup_reason)}")
+    cfg.add(f"Rotate        {enum_label(tag.rotate)}")
+    cfg.add(f"LUT           {enum_label(tag.lut)}")
 
     caps_branch = cfg.add(f"Capabilities  0x{tag.capabilities:04x}")
     for name in tag.capabilities_list:

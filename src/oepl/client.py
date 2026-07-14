@@ -305,7 +305,7 @@ class OEPLClient:
         """
         import json
 
-        data = await self._http.get_raw(f"tagtypes/{hw_type:02x}.json")
+        data = await self._http.get_raw(f"tagtypes/{hw_type:02X}.json")
         if data is None:
             return None
         return TagType.from_dict(hw_type, json.loads(data))
