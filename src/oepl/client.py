@@ -1,4 +1,4 @@
-"""OEPLClient — async client for the OpenDisplay AP."""
+"""OEPLClient — async client for the OpenEPaperLink AP."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class OEPLClient:
-    """Async client for the OpenDisplay Access Point (AP).
+    """Async client for the OpenEPaperLink Access Point (AP).
 
     Usage::
 

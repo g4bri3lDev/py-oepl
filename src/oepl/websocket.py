@@ -1,4 +1,4 @@
-"""WebSocket handler for the OpenDisplay AP."""
+"""WebSocket handler for the OpenEPaperLink AP."""
 
 from __future__ import annotations
 
