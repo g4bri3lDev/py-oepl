@@ -176,42 +176,80 @@ class OEPLClient:
         *,
         dither_mode: "DitherMode | None" = None,
         color_scheme: "ColorScheme | None" = None,
+        dither: int | None = None,
         ttl: int = 0,
-        rotate: Rotation = Rotation.NONE,
-        lut: LUT = LUT.DEFAULT,
+        content_mode: int = 24,
+        rotate: Rotation | None = None,
+        lut: LUT | None = None,
+        invert: bool | None = None,
+        alias: str | None = None,
         preload_type: int = 0,
         preload_lut: int = 0,
     ) -> None:
         """Upload an image to a tag through the AP.
 
         If *image* is a :class:`PIL.Image.Image` and *dither_mode* is not
-        ``DitherMode.NONE``, client-side dithering is applied before upload.
-        The AP-side dither field is always sent as ``"0"`` (AP dithering disabled).
+        ``DitherMode.NONE``, client-side dithering is applied before upload
+        (only when *epaper-dithering* is installed). PIL images are always
+        encoded as JPEG (``quality=100, subsampling=0``) before upload; the AP
+        decodes uploaded images exclusively with TJpgDec, which cannot read
+        PNG.
+
+        The AP performs **no scaling** of the uploaded image — it must already
+        match the tag's native resolution, or the display renders garbage.
+        ``/imgupload`` returns an empty body on success, so a failed upload
+        (e.g. malformed multipart body, unsupported image) is generally *not*
+        detectable from the HTTP response alone; a later API adds effect-based
+        waiting to confirm the tag actually redrew.
+
+        ``rotate``, ``lut``, ``invert`` and ``alias`` are omission-sensitive:
+        the AP persists whichever of these fields are present onto the tag's
+        stored record, so they are only sent when explicitly passed. Leaving
+        them at their ``None`` default leaves the tag's existing configuration
+        untouched.
 
         Args:
             mac: Tag MAC address (case-insensitive).
             image: PIL Image or raw image bytes to upload.
             dither_mode: Client-side dithering mode. Defaults to
                 ``DitherMode.FLOYD_STEINBERG`` when *epaper-dithering* is
-                installed, or no dithering if not installed.
+                installed, or no dithering if not installed. Only applies to
+                PIL image input.
             color_scheme: Color scheme for dithering. Defaults to
-                ``ColorScheme.BWR`` when *epaper-dithering* is installed.
+                ``ColorScheme.BWR`` when *epaper-dithering* is installed. Only
+                applies to PIL image input.
+            dither: AP-side dithering mode (``0``=none, ``1``=Burkes,
+                ``2``=ordered/pattern). When omitted: if *image* is a PIL
+                image that was client-side dithered, ``0`` is sent (to avoid
+                double-dithering); otherwise the field is omitted entirely and
+                the firmware defaults to ``1`` (Burkes).
             ttl: Tag sleep interval in seconds. Converted to minutes internally.
                 ``0`` → AP uses the tag's default sleep interval.
-            rotate: Image rotation applied server-side.
-            lut: Display refresh LUT mode.
+            content_mode: Tag content mode to assign (default ``24`` = static
+                image; ``25`` = external/Home-Assistant-managed image).
+            rotate: Image rotation applied server-side. Omitted (and left
+                unchanged on the tag) unless explicitly passed.
+            lut: Display refresh LUT mode. Omitted (and left unchanged on the
+                tag) unless explicitly passed.
+            invert: Invert the image colors. Omitted (and left unchanged on
+                the tag) unless explicitly passed.
+            alias: Display alias to set for the tag. Omitted (and left
+                unchanged on the tag) unless explicitly passed.
             preload_type: Type for image preloading (``0`` = disabled).
             preload_lut: LUT for preloaded image.
         """
+        client_dithered = False
         if isinstance(image, Image.Image):
             if dither_image is not None:
                 _dm = dither_mode if dither_mode is not None else DitherMode.FLOYD_STEINBERG
                 _cs = color_scheme if color_scheme is not None else ColorScheme.BWR
-                image = dither_image(image, _cs, _dm)
+                if _dm != DitherMode.NONE:
+                    image = dither_image(image, _cs, _dm)
+                    client_dithered = True
             buf = io.BytesIO()
-            image.save(buf, format="PNG")
+            image.convert("RGB").save(buf, format="JPEG", quality=100, subsampling=0)
             image_bytes = buf.getvalue()
-            filename, content_type = "image.png", "image/png"
+            filename, content_type = "image.jpg", "image/jpeg"
         else:
             image_bytes = image
             filename, content_type = "image.jpg", "image/jpeg"
@@ -220,16 +258,27 @@ class OEPLClient:
 
         fields: dict[str, Any] = {
             "mac": mac.upper(),
-            "contentmode": "25",
-            "dither": "0",
+            "contentmode": str(content_mode),
             "ttl": str(ttl_minutes),
-            "lut": str(lut.value),
-            "rotate": str(rotate.value),
-            "image": (filename, image_bytes, content_type),
         }
+        if rotate is not None:
+            fields["rotate"] = str(rotate.value)
+        if lut is not None:
+            fields["lut"] = str(lut.value)
+        if invert is not None:
+            fields["invert"] = "1" if invert else "0"
+        if alias is not None:
+            fields["alias"] = alias
         if preload_type > 0:
             fields["preloadtype"] = str(preload_type)
             fields["preloadlut"] = str(preload_lut)
+
+        if dither is not None:
+            fields["dither"] = str(dither)
+        elif client_dithered:
+            fields["dither"] = "0"
+
+        fields["image"] = (filename, image_bytes, content_type)
 
         await self._http.post_multipart("imgupload", fields)
 
