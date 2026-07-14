@@ -323,3 +323,80 @@ def test_apinfo_tolerant_missing_keys():
     assert info.has_tslr is False
     assert info.has_flasher is False
     assert info.alias == ""
+
+
+@pytest.mark.parametrize("bad_apstate", ["", "garbage", None])
+def test_apconfig_apstate_tolerant_of_bad_values(real_apconfig_dict, bad_apstate):
+    """apstate '' / 'garbage' / None must not crash from_dict; parses as OFFLINE."""
+    real_apconfig_dict["apstate"] = bad_apstate
+    cfg = APConfig.from_dict(real_apconfig_dict)
+    assert cfg.ap_state is APState.OFFLINE
+
+
+def test_wificonfig_from_dict():
+    from oepl.models import WifiConfig
+
+    data = {
+        "ssid": "my-network",
+        "pw": "hunter2",
+        "ip": "192.168.1.50",
+        "mask": "255.255.255.0",
+        "gw": "192.168.1.1",
+        "dns": "192.168.1.1",
+        "mac": "AA:BB:CC:DD:EE:FF",
+    }
+    cfg = WifiConfig.from_dict(data)
+    assert cfg.ssid == "my-network"
+    assert cfg.password == "hunter2"
+    assert cfg.ip == "192.168.1.50"
+    assert cfg.mask == "255.255.255.0"
+    assert cfg.gateway == "192.168.1.1"
+    assert cfg.dns == "192.168.1.1"
+    assert cfg.mac == "AA:BB:CC:DD:EE:FF"
+    assert cfg.raw == data
+
+
+def test_wificonfig_tolerant_missing_keys():
+    from oepl.models import WifiConfig
+
+    cfg = WifiConfig.from_dict({})
+    assert cfg.ssid == ""
+    assert cfg.password == ""
+    assert cfg.mac == ""
+
+
+def test_ssidlist_from_dict():
+    from oepl.models import SSIDList
+
+    data = {
+        "scanstatus": 2,
+        "networks": [
+            {"ssid": "net-a", "ch": 6, "rssi": -50, "enc": 3},
+            {"ssid": "net-b", "ch": 11, "rssi": -70, "enc": 4},
+        ],
+    }
+    result = SSIDList.from_dict(data)
+    assert result.scan_status == 2
+    assert len(result.networks) == 2
+    assert result.networks[0].ssid == "net-a"
+    assert result.networks[0].channel == 6
+    assert result.networks[0].rssi == -50
+    assert result.networks[0].encryption == 3
+    assert result.networks[1].ssid == "net-b"
+    assert result.raw == data
+
+
+def test_ssidlist_tolerant_missing_keys():
+    from oepl.models import SSIDList
+
+    result = SSIDList.from_dict({})
+    assert result.scan_status == 0
+    assert result.networks == []
+
+
+def test_ssidlist_scanning_status():
+    """scan_status can be -1 (scanning) or -2 (not started) per WiFi.scanComplete()."""
+    from oepl.models import SSIDList
+
+    result = SSIDList.from_dict({"scanstatus": -1, "networks": []})
+    assert result.scan_status == -1
