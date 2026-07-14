@@ -1,5 +1,6 @@
 """Tests for OEPLClient HTTP operations."""
 
+import json
 import warnings
 
 import aiohttp
@@ -8,7 +9,7 @@ from aioresponses import aioresponses
 
 from oepl.client import OEPLClient
 from oepl.enums import LUT, Rotation, TagCommand
-from oepl.exceptions import OEPLResponseError
+from oepl.exceptions import OEPLNotFoundError, OEPLResponseError
 from oepl.led import Color, LEDPattern, LEDSegment
 
 HOST = "192.168.1.1"
@@ -610,3 +611,162 @@ async def test_injected_session_never_created_closed_or_mutated(tag_dict):
         await c.disconnect()
         assert injected.closed is False
         assert c._session is injected
+
+
+# ----------------------------------------------------------------------
+# AP operations: variables, wifi, backup/restore, set_time
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_set_variable(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/set_var", status=200, body="Ok, saved")
+        await client.set_variable("myvar", "myvalue")
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/set_var"))]
+    assert len(calls) == 1
+    assert calls[0].kwargs["data"] == {"key": "myvar", "val": "myvalue"}
+
+
+@pytest.mark.asyncio
+async def test_set_variables_serializes_dict_as_json_field(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/set_vars", status=200, body="JSON uploaded and processed")
+        await client.set_variables({"a": "1", "b": "2"})
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/set_vars"))]
+    assert len(calls) == 1
+    data = calls[0].kwargs["data"]
+    assert set(data.keys()) == {"json"}
+    assert json.loads(data["json"]) == {"a": "1", "b": "2"}
+
+
+@pytest.mark.asyncio
+async def test_get_wifi_config(client):
+    payload = {
+        "ssid": "home-network",
+        "pw": "secret",
+        "ip": "",
+        "mask": "",
+        "gw": "",
+        "dns": "",
+        "mac": "AA:BB:CC:DD:EE:FF",
+    }
+    with aioresponses() as m:
+        m.get(f"{BASE}/get_wifi_config", payload=payload)
+        cfg = await client.get_wifi_config()
+
+    assert cfg.ssid == "home-network"
+    assert cfg.password == "secret"
+    assert cfg.mac == "AA:BB:CC:DD:EE:FF"
+    assert cfg.raw == payload
+
+
+@pytest.mark.asyncio
+async def test_get_ssid_list(client):
+    payload = {
+        "scanstatus": 1,
+        "networks": [{"ssid": "net-a", "ch": 6, "rssi": -50, "enc": 3}],
+    }
+    with aioresponses() as m:
+        m.get(f"{BASE}/get_ssid_list", payload=payload)
+        result = await client.get_ssid_list()
+
+    assert result.scan_status == 1
+    assert len(result.networks) == 1
+    assert result.networks[0].ssid == "net-a"
+
+
+@pytest.mark.asyncio
+async def test_save_wifi_config_posts_json_body(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/save_wifi_config", status=200, body="Ok, saved")
+        await client.save_wifi_config("my-ssid", password="my-pass", ip="192.168.1.50")
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/save_wifi_config"))]
+    assert len(calls) == 1
+    kwargs = calls[0].kwargs
+    assert "data" not in kwargs or kwargs.get("data") is None
+    assert kwargs["json"] == {"ssid": "my-ssid", "pw": "my-pass", "ip": "192.168.1.50"}
+
+
+@pytest.mark.asyncio
+async def test_save_wifi_config_omits_unset_fields(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/save_wifi_config", status=200, body="Ok, saved")
+        await client.save_wifi_config("my-ssid")
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/save_wifi_config"))]
+    assert calls[0].kwargs["json"] == {"ssid": "my-ssid"}
+
+
+@pytest.mark.asyncio
+async def test_save_wifi_config_factory_ssid_raises_without_force(client):
+    with pytest.raises(ValueError, match="factory"):
+        await client.save_wifi_config("factory")
+
+
+@pytest.mark.asyncio
+async def test_save_wifi_config_factory_ssid_with_force_passes_through(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/save_wifi_config", status=200, body="Ok, saved")
+        await client.save_wifi_config("factory", force=True)
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/save_wifi_config"))]
+    assert calls[0].kwargs["json"] == {"ssid": "factory"}
+
+
+@pytest.mark.asyncio
+async def test_backup_db_bytes_passthrough(client):
+    with aioresponses() as m:
+        m.get(f"{BASE}/backup_db", status=200, body=b'{"tags":[]}')
+        data = await client.backup_db()
+
+    assert data == b'{"tags":[]}'
+
+
+@pytest.mark.asyncio
+async def test_backup_db_404_raises(client):
+    with aioresponses() as m:
+        m.get(f"{BASE}/backup_db", status=404)
+        with pytest.raises(OEPLNotFoundError):
+            await client.backup_db()
+
+
+@pytest.mark.asyncio
+async def test_restore_db_multipart_contains_file_part(client):
+    payload = b'{"tags":[{"mac":"AABBCCDDEEFF"}]}'
+    with aioresponses() as m:
+        m.post(f"{BASE}/restore_db", status=200, body="Ok, restored.")
+        await client.restore_db(payload)
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/restore_db"))]
+    assert len(calls) == 1
+    kwargs = calls[0].kwargs
+    content_type = kwargs["headers"]["Content-Type"]
+    text_fields, file_parts = _parse_multipart(kwargs["data"], content_type)
+    assert text_fields == {}
+    assert file_parts["file"] == payload
+    assert file_parts["__headers__"]["file"] == "Content-Type: application/json"
+
+
+@pytest.mark.asyncio
+async def test_set_time_no_arg_posts_current_epoch(client, monkeypatch):
+    monkeypatch.setattr("oepl.client.time.time", lambda: 1750000000.0)
+    with aioresponses() as m:
+        m.post(f"{BASE}/set_time", status=200, body="ok")
+        await client.set_time()
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/set_time"))]
+    assert calls[0].kwargs["data"] == {"epoch": "1750000000"}
+
+
+@pytest.mark.asyncio
+async def test_set_time_explicit_epoch(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/set_time", status=200, body="ok")
+        await client.set_time(1234567890)
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/set_time"))]
+    assert calls[0].kwargs["data"] == {"epoch": "1234567890"}

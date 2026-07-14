@@ -278,9 +278,28 @@ Key points:
 info   = await client.get_sysinfo()    # APInfo — static hardware/firmware info
 config = await client.get_ap_config()  # APConfig — current settings
 await client.save_ap_config(config)
-await client.set_time(int(time.time()))
+await client.set_time()                # defaults to the current time; pass epoch=... to override
 await client.reboot_ap()
+
+# Template variables usable as {key} in JSON templates / content definitions
+await client.set_variable("owner", "alice")
+await client.set_variables({"owner": "alice", "room": "kitchen"})
+
+# WiFi settings
+wifi = await client.get_wifi_config()   # WifiConfig — includes the stored password in cleartext
+scan = await client.get_ssid_list()     # SSIDList — poll repeatedly; scan_status settles asynchronously
+await client.save_wifi_config("my-ssid", password="my-pass", ip="192.168.1.50")
+
+# Tag database backup/restore
+backup = await client.backup_db()        # bytes (raw tagDB JSON)
+await client.restore_db(backup)          # DESTRUCTIVE — replaces the tag database, cannot be undone
 ```
+
+> **`save_wifi_config` always reboots the AP**, on every call, regardless of which fields
+> changed (the firmware unconditionally restarts at the end of its handler). Passing
+> `ssid="factory"` is even more destructive — it wipes WiFi credentials, the tag database, and
+> OTA files before rebooting — so this method raises `ValueError` for `ssid="factory"` unless you
+> pass `force=True`.
 
 #### Live updates via WebSocket
 
@@ -341,6 +360,9 @@ sent, in case a field you need hasn't been mapped to a typed attribute yet.
 | `APListItem` | `ip`, `alias`, `count`, `channel`, `version`, `raw` |
 | `UploadProgress` | `src` (tag MAC), `current`, `total`, `done` (property), `raw` |
 | `TagType` | `type_id`, `width`, `height`, `bpp`, `version`, `name`, `rotatebuffer`, `color_table`, `short_lut`, `options`, `content_ids`, `template`, `raw` |
+| `WifiConfig` | `ssid`, `password`, `ip`, `mask`, `gateway`, `dns`, `mac`, `raw` |
+| `WifiNetwork` | `ssid`, `channel`, `rssi`, `encryption`, `raw` |
+| `SSIDList` | `scan_status`, `networks` (`list[WifiNetwork]`), `raw` |
 
 Notes:
 

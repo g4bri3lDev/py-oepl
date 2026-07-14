@@ -12,7 +12,18 @@ from .exceptions import (
 )
 from .image import decode_image
 from .led import Color, LEDPattern, LEDSegment
-from .models import APConfig, APInfo, APListItem, APStatus, Tag, TagType, UploadProgress
+from .models import (
+    APConfig,
+    APInfo,
+    APListItem,
+    APStatus,
+    SSIDList,
+    Tag,
+    TagType,
+    UploadProgress,
+    WifiConfig,
+    WifiNetwork,
+)
 
 # Re-export epaper-dithering types so callers don't need a separate import
 try:
@@ -32,6 +43,9 @@ __all__ = [
     "TagType",
     "APListItem",
     "UploadProgress",
+    "WifiConfig",
+    "WifiNetwork",
+    "SSIDList",
     # Enums
     "APState",
     "RunStatus",

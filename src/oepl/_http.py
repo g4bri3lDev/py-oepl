@@ -96,6 +96,12 @@ class _HTTPClient:
         _raise_if_error_body(resp.status, body)
         return body
 
+    async def post_json(self, path: str, payload: dict[str, Any]) -> str:
+        resp = await self._request("POST", path, json=payload)
+        body = await resp.text()
+        _raise_if_error_body(resp.status, body)
+        return body
+
     async def post_multipart(self, path: str, fields: dict[str, Any]) -> None:
         """POST multipart/form-data; retries up to 3x on timeout with exponential backoff.
 

@@ -6,6 +6,7 @@ import asyncio
 import io
 import json
 import logging
+import time
 from typing import Any, Callable
 
 import aiohttp
@@ -14,7 +15,17 @@ from PIL import Image
 from ._http import _HTTPClient
 from .enums import LUT, ContentMode, Rotation, TagCommand
 from .led import LEDPattern
-from .models import APConfig, APInfo, APListItem, APStatus, Tag, TagType, UploadProgress
+from .models import (
+    APConfig,
+    APInfo,
+    APListItem,
+    APStatus,
+    SSIDList,
+    Tag,
+    TagType,
+    UploadProgress,
+    WifiConfig,
+)
 from .websocket import _WebSocketHandler
 
 try:
@@ -549,9 +560,135 @@ class OEPLClient:
         """Reboot the AP."""
         await self._http.post_form("reboot", {})
 
-    async def set_time(self, epoch: int) -> None:
-        """Sync the AP clock to a Unix epoch timestamp."""
+    async def set_time(self, epoch: int | None = None) -> None:
+        """Sync the AP clock to a Unix epoch timestamp.
+
+        Args:
+            epoch: Unix timestamp (seconds) to set. Defaults to the current
+                time (``int(time.time())``) when omitted. The firmware
+                rejects (400) any value at or before ~2020-09-13
+                (``web.cpp``'s sanity check, epoch <= 1600000000).
+        """
+        if epoch is None:
+            epoch = int(time.time())
         await self._http.post_form("set_time", {"epoch": str(epoch)})
+
+    async def set_variable(self, key: str, value: str) -> None:
+        """Set a single template variable usable as ``{key}`` in JSON templates/content defs.
+
+        POSTs to ``/set_var`` (web.cpp:712-722).
+        """
+        await self._http.post_form("set_var", {"key": key, "val": value})
+
+    async def set_variables(self, variables: dict[str, str]) -> None:
+        """Set multiple template variables at once via ``/set_vars`` (web.cpp:723-741).
+
+        *variables* is serialized to JSON and sent as the ``json`` form field;
+        the firmware iterates the object and calls the same per-key setter as
+        :meth:`set_variable` for each entry.
+        """
+        await self._http.post_form("set_vars", {"json": json.dumps(variables)})
+
+    async def get_wifi_config(self) -> WifiConfig:
+        """Fetch the AP's stored WiFi/network settings from ``/get_wifi_config``.
+
+        Includes the stored WiFi password in cleartext (as the firmware
+        stores and returns it) — handle the result accordingly.
+        """
+        data = await self._http.get_json("get_wifi_config")
+        return WifiConfig.from_dict(data)
+
+    async def get_ssid_list(self) -> SSIDList:
+        """Fetch nearby WiFi networks from ``/get_ssid_list`` (web.cpp:764-788).
+
+        Each call also (re)starts a background scan on the AP if the last one
+        is stale (>30s) or was never started, so ``scan_status`` may read
+        ``-1`` (scanning) or ``-2`` (not started) on the first call(s) before
+        settling to a network count — poll again after a short delay to get
+        results.
+        """
+        data = await self._http.get_json("get_ssid_list")
+        return SSIDList.from_dict(data)
+
+    async def save_wifi_config(
+        self,
+        ssid: str,
+        *,
+        password: str | None = None,
+        ip: str | None = None,
+        mask: str | None = None,
+        gateway: str | None = None,
+        dns: str | None = None,
+        force: bool = False,
+    ) -> None:
+        """Write WiFi/network settings via ``/save_wifi_config`` and reboot the AP.
+
+        POSTs a **JSON body** (not form data) to ``/save_wifi_config``
+        (``AsyncCallbackJsonWebHandler``, web.cpp:790-839). Only the keys
+        passed are included in the body; the firmware only overwrites a
+        stored preference when the corresponding JSON key is present and a
+        string, so omitted keyword arguments leave that setting unchanged —
+        except that **the AP unconditionally restarts at the end of this
+        handler**, every time, regardless of which fields were sent.
+
+        DANGER: if *ssid* is the literal string ``"factory"``, the firmware
+        does not just update WiFi settings — it wipes the stored WiFi
+        credentials, destroys the tag database, deletes OTA/update files and
+        logs, and reboots into a factory-reset state (web.cpp:808-830). To
+        guard against this being triggered by an accidental/templated value,
+        this method raises :class:`ValueError` when ``ssid == "factory"``
+        unless *force* is explicitly ``True``.
+
+        Args:
+            ssid: Network SSID to connect to.
+            password: Network password.
+            ip: Static IP address (empty/omitted for DHCP).
+            mask: Static subnet mask.
+            gateway: Static gateway address.
+            dns: Static DNS server address.
+            force: Must be ``True`` to allow ``ssid == "factory"``.
+
+        Raises:
+            ValueError: If ``ssid == "factory"`` and *force* is not ``True``.
+        """
+        if ssid == "factory" and not force:
+            raise ValueError(
+                "ssid='factory' triggers a firmware factory reset (wipes WiFi credentials, "
+                "the tag database, and OTA files, then reboots) — pass force=True to confirm "
+                "this is intentional."
+            )
+        payload: dict[str, Any] = {"ssid": ssid}
+        if password is not None:
+            payload["pw"] = password
+        if ip is not None:
+            payload["ip"] = ip
+        if mask is not None:
+            payload["mask"] = mask
+        if gateway is not None:
+            payload["gw"] = gateway
+        if dns is not None:
+            payload["dns"] = dns
+        await self._http.post_json("save_wifi_config", payload)
+
+    async def backup_db(self) -> bytes:
+        """Download the AP's tag database as JSON bytes from ``/backup_db``.
+
+        Raises:
+            OEPLNotFoundError: If the AP responds 404.
+        """
+        resp = await self._http._request("GET", "backup_db")
+        return await resp.read()
+
+    async def restore_db(self, data: bytes) -> None:
+        """Replace the AP's tag database from a previously downloaded backup.
+
+        POSTs *data* as a multipart file upload to ``/restore_db``
+        (``dotagDBUpload``, web.cpp:1062-1078) under the ``file`` field name
+        (matching the AP's own web UI). The AP destroys its current tag
+        database and reloads it from the uploaded content immediately —
+        **this is destructive and cannot be undone.**
+        """
+        await self._http.post_multipart("restore_db", {"file": ("tagDB.json", data, "application/json")})
 
     # ------------------------------------------------------------------
     # Internal helpers (called by _WebSocketHandler)

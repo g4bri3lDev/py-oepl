@@ -16,6 +16,14 @@ def _epoch_to_datetime(epoch: int) -> datetime | None:
     return datetime.fromtimestamp(epoch, tz=timezone.utc)
 
 
+def _ap_state(value: Any) -> APState:
+    """Coerce a raw 'apstate' value to APState, tolerating '' / None / garbage as OFFLINE."""
+    try:
+        return APState(int(value))
+    except (TypeError, ValueError):
+        return APState.OFFLINE
+
+
 @dataclass
 class Tag:
     """Represents an e-paper tag connected to the AP."""
@@ -358,7 +366,7 @@ class APConfig:
             has_c6=_flag("C6"),
             has_h2=_flag("H2"),
             has_sub_ghz=_flag("hasSubGhz"),
-            ap_state=APState(int(data.get("apstate", 0))),
+            ap_state=_ap_state(data.get("apstate", 0)),
             tlsr=_flag("TLSR"),
             save_space=_flag("savespace"),
             has_flasher=_flag("hasFlasher"),
@@ -486,5 +494,87 @@ class TagType:
             template=data.get("template", {}),
             use_template=data.get("usetemplate"),
             zlib_compression=data.get("zlib_compression"),
+            raw=dict(data),
+        )
+
+
+@dataclass
+class WifiConfig:
+    """Stored WiFi/network settings (from ``/get_wifi_config``, web.cpp:749-762).
+
+    The firmware reads these back out of its ``Preferences`` "wifi" namespace
+    and always includes all six keys (empty string when unset), plus the
+    AP's own MAC address.
+    """
+
+    ssid: str = ""
+    password: str = ""
+    ip: str = ""
+    mask: str = ""
+    gateway: str = ""
+    dns: str = ""
+    mac: str = ""
+    raw: dict[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "WifiConfig":
+        """Parse a ``/get_wifi_config`` dict. Tolerant of missing keys."""
+        return cls(
+            ssid=data.get("ssid", ""),
+            password=data.get("pw", ""),
+            ip=data.get("ip", ""),
+            mask=data.get("mask", ""),
+            gateway=data.get("gw", ""),
+            dns=data.get("dns", ""),
+            mac=data.get("mac", ""),
+            raw=dict(data),
+        )
+
+
+@dataclass
+class WifiNetwork:
+    """A single scanned WiFi network, as reported by ``/get_ssid_list``."""
+
+    ssid: str = ""
+    channel: int = 0
+    rssi: int = 0
+    encryption: int = 0
+    raw: dict[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "WifiNetwork":
+        """Parse a single entry of the ``networks`` array. Tolerant of missing keys."""
+        return cls(
+            ssid=data.get("ssid", ""),
+            channel=data.get("ch", 0),
+            rssi=data.get("rssi", 0),
+            encryption=data.get("enc", 0),
+            raw=dict(data),
+        )
+
+
+@dataclass
+class SSIDList:
+    """Scan results from ``/get_ssid_list`` (web.cpp:764-788).
+
+    ``scan_status`` mirrors ESP32 ``WiFi.scanComplete()`` semantics: ``-1``
+    means a scan is currently running, ``-2`` means no scan has been started
+    yet, and any value ``>= 0`` is the number of networks found by the last
+    completed scan (``networks`` is capped at 50 entries by the firmware
+    regardless of that count). The firmware (re)starts a background scan on
+    almost every call to this endpoint, so polling it repeatedly is the
+    normal way to eventually observe a non-negative ``scan_status``.
+    """
+
+    scan_status: int = 0
+    networks: list[WifiNetwork] = field(default_factory=list)
+    raw: dict[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SSIDList":
+        """Parse a ``/get_ssid_list`` dict. Tolerant of missing keys."""
+        return cls(
+            scan_status=data.get("scanstatus", 0),
+            networks=[WifiNetwork.from_dict(n) for n in data.get("networks", [])],
             raw=dict(data),
         )
