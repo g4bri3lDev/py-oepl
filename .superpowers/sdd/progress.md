@@ -14,3 +14,8 @@ Task A1: complete (commit 84905df, review clean) — LUT values fixed, LED mode/
 Task A2: complete (commit 6a5b9b0, review clean) — manual multipart encoder, JPEG output, omission-based params, 56 tests green
 Task A3: complete (commit 5e7b889, review clean) — open IntEnums, tolerant parsing, raw retention, Tag hash/modecfgjson/invert/update_last, *_at props, tagtype case fix; 97 tests green
   Deferred findings (final-review triage): (a) APConfig.from_dict apstate=""/None crashes int() coercion — guard in B2; (b) tolerant parsing stores malformed value types as-is (e.g. lastseen:"x" breaks last_seen_at later) — systemic design decision.
+Task A4: complete (commit 75f6b92, review clean) — error bodies surfaced (post_form/get_text only), lazy owned session (inject-websession compliant), response release; 115 tests green
+  Minor findings deferred to final review: OEPLResponseError docstring stale; _raise_if_error_body status param redundant; disconnect() vs in-flight bare HTTP calls (pre-existing).
+Task A5: complete (commit c90dc82, review clean) — REBOOTING reconnect fix, warning-level parse failures, apitem/upload/touch/console/on_raw_message coverage, APListItem+UploadProgress models; 136 tests green
+Task A6: complete (commit 3988b33, review clean) — README rewritten against real API, rich/epaper-dithering extras, CLI guard, OpenDisplay naming swept; 136 tests green
+Phase A hardware gate: PASSED on live AP fw 2.91 — tagtype 0xE0 resolves; upload registers+renders (hash change, pending cleared, on_upload_progress 1/1); LED mode=1 sent; on_ap_status 19x/95s (baseline 2x). Phase A complete at 3988b33.
