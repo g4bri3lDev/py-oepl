@@ -73,10 +73,30 @@ class LUT(OEPLIntEnum):
 class TagCommand(str, Enum):
     """Commands that can be sent to a tag via the AP."""
 
+    DEL = "del"
+    """Remove the tag record from the AP's database."""
+    PURGE = "purge"
+    """Bulk-delete stale/expired tags from the AP's database.
+
+    Despite being a per-tag command (requires a valid ``mac``/tag lookup to
+    reach the handler), the firmware ignores that MAC for the actual purge:
+    it scans the *entire* tag database and deletes any tag that is expired,
+    hasn't checked in for the AP's max sleep window, or hasn't been seen in
+    the last 24 hours (``web.cpp`` ``tag_cmd`` handler, ``purge`` branch).
+    """
     CLEAR = "clear"
     REFRESH = "refresh"
     REBOOT = "reboot"
     SCAN = "scan"
+    RESET = "reset"
+    DEEPSLEEP = "deepsleep"
+    """Put the tag into deep sleep until woken by button press or NFC."""
+    LEDFLASH = "ledflash"
+    """Trigger a hardcoded firmware LED flash pattern (short, tri-color)."""
+    LEDFLASH_LONG = "ledflash_long"
+    """Trigger a hardcoded firmware LED flash pattern (long, red)."""
+    LEDFLASH_STOP = "ledflash_stop"
+    """Stop any currently running LED flash pattern."""
 
 
 class WakeupReason(OEPLIntEnum):

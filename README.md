@@ -162,6 +162,9 @@ access must happen inside a running event loop — don't construct `OEPLClient` 
 # Fetch all tags (paginated); populates internal cache; fires on_tag_update callbacks
 tags: list[Tag] = await client.get_tags()
 
+# Fetch a single tag by MAC; same cache/callback behavior as get_tags(). None if unknown.
+tag: Tag | None = await client.get_tag("AABBCCDDEEFF")
+
 # Upload an image (PIL Image or raw bytes)
 from PIL import Image
 from oepl import Rotation, LUT
@@ -175,17 +178,36 @@ await client.upload_image(
     lut=LUT.FAST,
 )
 
-# Set the alias shown in the AP web UI
+# Set the alias shown in the AP web UI (delegates to save_tag_config)
 await client.set_alias("AABBCCDDEEFF", "my-display")
+
+# Update tag config fields — only the ones you pass are sent/changed (omission-sensitive)
+from oepl import ContentMode
+await client.save_tag_config(
+    "AABBCCDDEEFF",
+    content_mode=ContentMode.TODAY,
+    rotate=Rotation.R90,
+    lut=LUT.FAST,
+    invert=True,
+)
 
 # Send a command
 from oepl import TagCommand
 await client.send_tag_cmd("AABBCCDDEEFF", TagCommand.REFRESH)
 
+# Delete a tag (removes it from the AP's database and the local cache)
+await client.delete_tag("AABBCCDDEEFF")
+# purge=True sends TagCommand.PURGE instead — note this bulk-deletes *all* stale
+# tags on the AP, not just this one (see TagCommand.PURGE docstring)
+await client.delete_tag("AABBCCDDEEFF", purge=True)
+
 # Flash LEDs
 from oepl import Color, LEDPattern
 pattern = LEDPattern.single(Color(255, 0, 0), repeats=3)
 await client.set_led("AABBCCDDEEFF", pattern)
+
+# Push a JSON payload for content mode 19 (custom/JSON rendering)
+await client.upload_json("AABBCCDDEEFF", {"text": "hello"}, ttl=300)
 
 # Fetch the tag type definition (served by the AP, works offline)
 tag_type = await client.get_tag_type(0x16)  # returns TagType | None
@@ -195,6 +217,9 @@ from oepl import decode_image
 raw = await client.get_image_raw("AABBCCDDEEFF")  # bytes | None
 if raw and tag_type:
     jpeg_bytes = decode_image(raw, tag_type)
+
+# Fetch raw image bytes directly (optionally by queued md5 hash)
+data = await client.get_image_data("AABBCCDDEEFF")  # bytes | None
 ```
 
 ##### `upload_image`
