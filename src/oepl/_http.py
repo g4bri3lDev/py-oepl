@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any, cast
+from uuid import uuid4
 
 import aiohttp
 
@@ -74,22 +75,51 @@ class _HTTPClient:
         return await resp.text()
 
     async def post_multipart(self, path: str, fields: dict[str, Any]) -> None:
-        """POST multipart/form-data; retries up to 3× on timeout with exponential backoff."""
+        """POST multipart/form-data; retries up to 3x on timeout with exponential backoff.
+
+        Builds the body by hand instead of using ``aiohttp.FormData``. The AP's
+        ESPAsyncWebServer multipart parser treats *any* part carrying a
+        Content-Type header as a file part; ``aiohttp.FormData`` emits a
+        ``Content-Type: text/plain; charset=utf-8`` header on every text field,
+        so none of them register via ``hasParam()`` on the AP and the request is
+        silently discarded (bare 200, empty body). Text fields here therefore get
+        exactly one header line (``Content-Disposition``, no Content-Type); only
+        file parts (tuple values) carry a Content-Type. Callers must order
+        *fields* with text fields first and file fields last, since the AP parses
+        params before the file part completes.
+        """
+        boundary = uuid4().hex
+        body = self._encode_multipart(fields, boundary)
+        headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+
         backoff = _UPLOAD_BACKOFF
         for attempt in range(1, _MAX_UPLOAD_RETRIES + 1):
-            form = aiohttp.FormData()
-            for key, value in fields.items():
-                if isinstance(value, tuple):
-                    # (filename, data, content_type)
-                    form.add_field(key, value[1], filename=value[0], content_type=value[2])
-                else:
-                    form.add_field(key, str(value))
-
             try:
-                await self._request("POST", path, data=form, timeout=_UPLOAD_TIMEOUT)
+                await self._request("POST", path, data=body, headers=headers, timeout=_UPLOAD_TIMEOUT)
                 return
             except OEPLTimeoutError:
                 if attempt >= _MAX_UPLOAD_RETRIES:
                     raise
                 await asyncio.sleep(backoff)
                 backoff *= 2
+
+    @staticmethod
+    def _encode_multipart(fields: dict[str, Any], boundary: str) -> bytes:
+        parts: list[bytes] = []
+        for key, value in fields.items():
+            if isinstance(value, tuple):
+                # (filename, data, content_type)
+                filename, data, content_type = value
+                parts.append(
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="{key}"; filename="{filename}"\r\n'
+                    f"Content-Type: {content_type}\r\n\r\n".encode()
+                    + data
+                    + b"\r\n"
+                )
+            else:
+                parts.append(
+                    (f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n').encode()
+                )
+        parts.append(f"--{boundary}--\r\n".encode())
+        return b"".join(parts)

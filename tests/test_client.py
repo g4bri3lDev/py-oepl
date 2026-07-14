@@ -45,43 +45,156 @@ async def test_get_tags_paginated(client, tag_dict):
     assert "001122334455" in macs
 
 
+def _get_upload_call(m):
+    """Return the (args, kwargs) of the single recorded /imgupload POST."""
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/imgupload"))]
+    assert len(calls) == 1
+    return calls[0]
+
+
+def _parse_multipart(body: bytes, content_type: str) -> tuple[dict[str, bytes], dict[str, bytes]]:
+    """Split a hand-built multipart body into (text_fields, file_parts).
+
+    text_fields: name -> raw part bytes (everything after the blank line, minus
+        trailing CRLF) for parts with no Content-Type header.
+    file_parts: name -> raw part bytes for parts that do carry a Content-Type
+        header (used to check the JPEG payload / content-type).
+    """
+    boundary = content_type.split("boundary=")[1].strip()
+    delimiter = f"--{boundary}".encode()
+    raw_parts = body.split(delimiter)
+    # First element is empty (before the first boundary), last is "--\r\n".
+    text_fields: dict[str, bytes] = {}
+    file_parts: dict[str, bytes] = {}
+    file_headers: dict[str, str] = {}
+    for raw in raw_parts:
+        raw = raw.strip(b"\r\n")
+        if not raw or raw == b"--":
+            continue
+        headers_blob, _, payload = raw.partition(b"\r\n\r\n")
+        headers_text = headers_blob.decode()
+        header_lines = [h for h in headers_text.split("\r\n") if h]
+        disposition = next(h for h in header_lines if h.startswith("Content-Disposition"))
+        name = disposition.split('name="')[1].split('"')[0]
+        if any(h.startswith("Content-Type") for h in header_lines):
+            file_parts[name] = payload
+            file_headers[name] = next(h for h in header_lines if h.startswith("Content-Type"))
+        else:
+            assert len(header_lines) == 1, f"text part {name!r} has extra headers: {header_lines}"
+            text_fields[name] = payload
+    file_parts["__headers__"] = file_headers  # type: ignore[assignment]
+    return text_fields, file_parts
+
+
 @pytest.mark.asyncio
-async def test_upload_image_multipart(client):
-    image_bytes = b"\xff\xd8\xff" + b"\x00" * 100  # minimal fake JPEG
+async def test_upload_image_pil_default(client):
+    """Default call with a PIL image: only mac/contentmode/ttl/image (+dither=0 if dithered)."""
+    from PIL import Image
+
+    from oepl.client import dither_image
+
+    image = Image.new("RGB", (4, 4), color="red")
 
     with aioresponses() as m:
-        m.post(f"{BASE}/imgupload", status=200, body=b"ok")
+        m.post(f"{BASE}/imgupload", status=200, body=b"")
+        await client.upload_image("aabbccddeeff", image)
+
+        args, kwargs = _get_upload_call(m)
+        body = kwargs["data"]
+        content_type = kwargs["headers"]["Content-Type"]
+        assert content_type.startswith("multipart/form-data; boundary=")
+        assert isinstance(body, (bytes, bytearray))
+
+        text_fields, file_parts = _parse_multipart(body, content_type)
+
+        assert text_fields["mac"] == b"AABBCCDDEEFF"
+        assert text_fields["contentmode"] == b"24"
+        assert text_fields["ttl"] == b"0"
+
+        for absent in ("rotate", "lut", "invert", "alias", "preloadtype", "preloadlut"):
+            assert absent not in text_fields
+
+        if dither_image is not None:
+            assert text_fields["dither"] == b"0"
+        else:
+            assert "dither" not in text_fields
+
+        assert file_parts["__headers__"]["image"] == "Content-Type: image/jpeg"
+        assert file_parts["image"].startswith(b"\xff\xd8")
+
+
+@pytest.mark.asyncio
+async def test_upload_image_explicit_optional_fields(client):
+    image_bytes = b"\xff\xd8\xff" + b"\x00" * 50
+
+    with aioresponses() as m:
+        m.post(f"{BASE}/imgupload", status=200, body=b"")
         await client.upload_image(
             "AABBCCDDEEFF",
             image_bytes,
-            lut=LUT.DEFAULT,
-            rotate=Rotation.NONE,
+            rotate=Rotation.R90,
+            lut=LUT.FAST,
+            invert=True,
+            alias="x",
+            dither=2,
         )
-        # Verify request was made
-        calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/imgupload"))]
-        assert len(calls) == 1
+
+        _args, kwargs = _get_upload_call(m)
+        text_fields, _file_parts = _parse_multipart(kwargs["data"], kwargs["headers"]["Content-Type"])
+
+        assert text_fields["rotate"] == b"1"
+        assert text_fields["lut"] == b"3"
+        assert text_fields["invert"] == b"1"
+        assert text_fields["alias"] == b"x"
+        assert text_fields["dither"] == b"2"
 
 
 @pytest.mark.asyncio
-async def test_upload_image_ttl_conversion(client):
-    """ttl=120 seconds → ttl_minutes=2 in the request."""
+@pytest.mark.parametrize(
+    ("ttl", "expected"),
+    [(120, b"2"), (0, b"0"), (30, b"1")],
+)
+async def test_upload_image_ttl_conversion(client, ttl, expected):
     image_bytes = b"\xff\xd8\xff" + b"\x00" * 50
 
     with aioresponses() as m:
-        m.post(f"{BASE}/imgupload", status=200, body=b"ok")
-        await client.upload_image("AABBCCDDEEFF", image_bytes, ttl=120)
-        # The key check is that post_multipart was called without raising
-        # (field validation is done in integration tests against a live AP)
+        m.post(f"{BASE}/imgupload", status=200, body=b"")
+        await client.upload_image("AABBCCDDEEFF", image_bytes, ttl=ttl)
+
+        _args, kwargs = _get_upload_call(m)
+        text_fields, _file_parts = _parse_multipart(kwargs["data"], kwargs["headers"]["Content-Type"])
+        assert text_fields["ttl"] == expected
 
 
 @pytest.mark.asyncio
-async def test_upload_image_ttl_zero(client):
-    """ttl=0 → ttl_minutes=0 (AP uses tag default)."""
-    image_bytes = b"\xff\xd8\xff" + b"\x00" * 50
+async def test_upload_image_raw_bytes_passthrough(client):
+    """Raw bytes input is sent byte-identical, with no dither field."""
+    image_bytes = b"\xff\xd8\xff" + b"\x00" * 123
+
     with aioresponses() as m:
-        m.post(f"{BASE}/imgupload", status=200, body=b"ok")
-        # Should not raise
-        await client.upload_image("AABBCCDDEEFF", image_bytes, ttl=0)
+        m.post(f"{BASE}/imgupload", status=200, body=b"")
+        await client.upload_image("AABBCCDDEEFF", image_bytes)
+
+        _args, kwargs = _get_upload_call(m)
+        text_fields, file_parts = _parse_multipart(kwargs["data"], kwargs["headers"]["Content-Type"])
+        assert file_parts["image"] == image_bytes
+        assert "dither" not in text_fields
+
+
+@pytest.mark.asyncio
+async def test_upload_image_body_ends_with_closing_boundary(client):
+    image_bytes = b"\xff\xd8\xff" + b"\x00" * 10
+
+    with aioresponses() as m:
+        m.post(f"{BASE}/imgupload", status=200, body=b"")
+        await client.upload_image("AABBCCDDEEFF", image_bytes)
+
+        _args, kwargs = _get_upload_call(m)
+        body = kwargs["data"]
+        content_type = kwargs["headers"]["Content-Type"]
+        boundary = content_type.split("boundary=")[1].strip()
+        assert isinstance(body, bytes)
+        assert body.endswith(f"--{boundary}--\r\n".encode())
 
 
 @pytest.mark.asyncio
