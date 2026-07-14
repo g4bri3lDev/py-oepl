@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, cast
+from typing import Any, Callable, cast
 from uuid import uuid4
 
 import aiohttp
@@ -21,12 +21,25 @@ _MAX_UPLOAD_RETRIES = 3
 _UPLOAD_BACKOFF = 2  # seconds; doubles on each retry
 
 
+def _raise_if_error_body(status: int, body: str) -> None:
+    """Raise OEPLResponseError if an HTTP-200 body is actually an AP-reported error.
+
+    The AP firmware reports some failures as ``200`` with an error string body
+    (e.g. ``/save_cfg`` with an unknown MAC returns ``200 "Error while saving:
+    mac not found"``). Any body that, once stripped, starts with "Error" or
+    "error" is treated as a failure even though the HTTP status was 200.
+    """
+    stripped = body.strip()
+    if stripped.startswith("Error") or stripped.startswith("error"):
+        raise OEPLResponseError(status, body)
+
+
 class _HTTPClient:
     """Wraps aiohttp.ClientSession with AP-specific error mapping."""
 
-    def __init__(self, host: str, session: aiohttp.ClientSession) -> None:
+    def __init__(self, host: str, session_provider: Callable[[], aiohttp.ClientSession]) -> None:
         self._base = f"http://{host}"
-        self._session = session
+        self._session_provider = session_provider
 
     def _url(self, path: str) -> str:
         return f"{self._base}/{path.lstrip('/')}"
@@ -39,18 +52,23 @@ class _HTTPClient:
         timeout: aiohttp.ClientTimeout = _DEFAULT_TIMEOUT,
         **kwargs: Any,
     ) -> aiohttp.ClientResponse:
+        session = self._session_provider()
         try:
-            resp = await self._session.request(method, self._url(path), timeout=timeout, **kwargs)
+            resp = await session.request(method, self._url(path), timeout=timeout, **kwargs)
         except aiohttp.ClientError as exc:
             raise OEPLConnectionError(str(exc)) from exc
         except asyncio.TimeoutError as exc:
             raise OEPLTimeoutError(f"Request to {path} timed out") from exc
 
         if resp.status == 404:
+            resp.release()
             raise OEPLNotFoundError(f"AP returned 404 for {path}")
         if resp.status != 200:
-            body = await resp.text()
-            raise OEPLResponseError(resp.status, body)
+            try:
+                body = await resp.text()
+                raise OEPLResponseError(resp.status, body)
+            finally:
+                resp.release()
 
         return resp
 
@@ -60,7 +78,9 @@ class _HTTPClient:
 
     async def get_text(self, path: str) -> str:
         resp = await self._request("GET", path)
-        return await resp.text()
+        body = await resp.text()
+        _raise_if_error_body(resp.status, body)
+        return body
 
     async def get_raw(self, path: str) -> bytes | None:
         """Return raw response bytes, or None on 404."""
@@ -72,7 +92,9 @@ class _HTTPClient:
 
     async def post_form(self, path: str, data: dict[str, Any]) -> str:
         resp = await self._request("POST", path, data=data)
-        return await resp.text()
+        body = await resp.text()
+        _raise_if_error_body(resp.status, body)
+        return body
 
     async def post_multipart(self, path: str, fields: dict[str, Any]) -> None:
         """POST multipart/form-data; retries up to 3x on timeout with exponential backoff.

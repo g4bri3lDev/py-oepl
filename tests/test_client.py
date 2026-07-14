@@ -1,11 +1,14 @@
 """Tests for OEPLClient HTTP operations."""
 
+import warnings
+
 import aiohttp
 import pytest
 from aioresponses import aioresponses
 
 from oepl.client import OEPLClient
 from oepl.enums import LUT, Rotation, TagCommand
+from oepl.exceptions import OEPLResponseError
 from oepl.led import Color, LEDPattern, LEDSegment
 
 HOST = "192.168.1.1"
@@ -17,7 +20,8 @@ async def client():
     """Yield an OEPLClient with its own session (no WebSocket started)."""
     c = OEPLClient(HOST)
     yield c
-    await c._session.close()
+    if c._session is not None:
+        await c._session.close()
 
 
 @pytest.mark.asyncio
@@ -200,11 +204,23 @@ async def test_upload_image_body_ends_with_closing_boundary(client):
 @pytest.mark.asyncio
 async def test_set_alias(client):
     with aioresponses() as m:
-        m.post(f"{BASE}/save_cfg", payload={"ok": True})
+        m.post(f"{BASE}/save_cfg", status=200, body="Ok, saved")
         await client.set_alias("AABBCCDDEEFF", "my-display")
 
         calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/save_cfg"))]
         assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_set_alias_raises_on_ap_error_body(client):
+    """The AP reports failures as HTTP 200 with an "Error..." body; must surface as an exception."""
+    with aioresponses() as m:
+        m.post(f"{BASE}/save_cfg", status=200, body="Error while saving: mac not found")
+        with pytest.raises(OEPLResponseError) as exc_info:
+            await client.set_alias("DEADBEEFDEAD", "my-display")
+
+    assert exc_info.value.status == 200
+    assert exc_info.value.body == "Error while saving: mac not found"
 
 
 @pytest.mark.asyncio
@@ -293,3 +309,63 @@ async def test_unsubscribe_callback(client, tag_dict):
         await client.get_tags()
 
     assert len(received) == 0
+
+
+# ----------------------------------------------------------------------
+# Session lifecycle (HA inject-websession compliance)
+# ----------------------------------------------------------------------
+
+
+def test_sync_construction_does_not_create_session():
+    """Constructing a client outside a running event loop must not create a session."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        c = OEPLClient(HOST)
+
+    assert c._session is None
+    assert c._owned_session is True
+
+
+@pytest.mark.asyncio
+async def test_owned_session_created_lazily_on_first_use(tag_dict):
+    c = OEPLClient(HOST)
+    assert c._session is None
+
+    with aioresponses() as m:
+        m.get(f"{BASE}/get_db", payload={"tags": [tag_dict], "continu": 0})
+        await c.get_tags()
+
+    assert c._session is not None
+    assert c._owned_session is True
+    await c.disconnect()
+    assert c._session is None
+
+
+@pytest.mark.asyncio
+async def test_owned_session_closed_after_disconnect(tag_dict):
+    c = OEPLClient(HOST)
+    with aioresponses() as m:
+        m.get(f"{BASE}/get_db", payload={"tags": [tag_dict], "continu": 0})
+        await c.get_tags()
+
+    session = c.session
+    await c.disconnect()
+    assert session.closed is True
+
+
+@pytest.mark.asyncio
+async def test_injected_session_never_created_closed_or_mutated(tag_dict):
+    async with aiohttp.ClientSession() as injected:
+        c = OEPLClient(HOST, session=injected)
+        assert c._session is injected
+        assert c._owned_session is False
+
+        with aioresponses() as m:
+            m.get(f"{BASE}/get_db", payload={"tags": [tag_dict], "continu": 0})
+            await c.get_tags()
+
+        assert c.session is injected
+
+        await c.disconnect()
+        assert injected.closed is False
+        assert c._session is injected
