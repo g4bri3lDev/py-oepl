@@ -37,12 +37,16 @@ class Rotation(IntEnum):
 
 
 class LUT(IntEnum):
-    """Display refresh LUT (look-up table) mode."""
+    """Display refresh LUT (look-up table) mode.
 
-    NO_REPEAT = 0
-    DEFAULT = 1
-    FAST_NO_REDS = 2
-    FAST = 3
+    Values match firmware (``OpenEpaperLink/oepl-definitions.h``).
+    """
+
+    DEFAULT = 0  # auto/default
+    NO_REPEAT = 1  # always full refresh
+    FAST_NO_REDS = 2  # fast (no reds)
+    FAST = 3  # fastest (ghosting)
+    OTA = 0x10
 
 
 class TagCommand(str, Enum):
