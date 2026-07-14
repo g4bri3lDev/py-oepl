@@ -234,7 +234,7 @@ async def test_send_tag_cmd(client):
 
 
 @pytest.mark.asyncio
-async def test_delete_tag_default_sends_del(client):
+async def test_delete_tag_sends_del(client):
     with aioresponses() as m:
         m.post(f"{BASE}/tag_cmd", status=200, body="Ok, done")
         client._tags["AABBCCDDEEFF"] = object()  # sentinel; only presence/absence matters
@@ -247,23 +247,40 @@ async def test_delete_tag_default_sends_del(client):
 
 
 @pytest.mark.asyncio
-async def test_delete_tag_purge_sends_purge(client):
-    with aioresponses() as m:
-        m.post(f"{BASE}/tag_cmd", status=200, body="Ok, done")
-        client._tags["AABBCCDDEEFF"] = object()
-        await client.delete_tag("AABBCCDDEEFF", purge=True)
-
-    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/tag_cmd"))]
-    assert calls[0].kwargs["data"] == {"mac": "AABBCCDDEEFF", "cmd": "purge"}
-    assert "AABBCCDDEEFF" not in client._tags
-
-
-@pytest.mark.asyncio
 async def test_delete_tag_missing_from_cache_is_noop(client):
     """Deleting a MAC not currently in the cache must not raise (cache is best-effort)."""
     with aioresponses() as m:
         m.post(f"{BASE}/tag_cmd", status=200, body="Ok, done")
         await client.delete_tag("AABBCCDDEEFF")
+
+
+@pytest.mark.asyncio
+async def test_purge_stale_tags_sends_purge_with_registered_mac(client, tag_dict):
+    """Purge fetches the tag list, sends cmd=purge with a registered MAC, then refetches the cache."""
+    survivor = dict(tag_dict, mac="001122334455", alias="survivor")
+    with aioresponses() as m:
+        # First get_tags(): both tags present.
+        m.get(f"{BASE}/get_db", payload={"tags": [tag_dict, survivor], "continu": 0})
+        m.post(f"{BASE}/tag_cmd", status=200, body="Ok, done")
+        # Refetch after purge: only the survivor remains server-side.
+        m.get(f"{BASE}/get_db", payload={"tags": [survivor], "continu": 0})
+        await client.purge_stale_tags()
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/tag_cmd"))]
+    assert len(calls) == 1
+    assert calls[0].kwargs["data"] == {"mac": "AABBCCDDEEFF", "cmd": "purge"}
+    # Cache reflects the server-side deletions (purged tag gone, survivor kept).
+    assert set(client._tags) == {"001122334455"}
+
+
+@pytest.mark.asyncio
+async def test_purge_stale_tags_empty_db_sends_nothing(client):
+    """With no tags registered there is no valid MAC to satisfy the handler guard; no command is sent."""
+    with aioresponses() as m:
+        m.get(f"{BASE}/get_db", payload={"tags": [], "continu": 0})
+        await client.purge_stale_tags()
+
+    assert ("POST", aiohttp.client.URL(f"{BASE}/tag_cmd")) not in m.requests
 
 
 @pytest.mark.asyncio

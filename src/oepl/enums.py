@@ -76,13 +76,15 @@ class TagCommand(str, Enum):
     DEL = "del"
     """Remove the tag record from the AP's database."""
     PURGE = "purge"
-    """Bulk-delete stale/expired tags from the AP's database.
+    """Bulk-delete stale tags from the AP's database — NOT scoped to one tag.
 
-    Despite being a per-tag command (requires a valid ``mac``/tag lookup to
-    reach the handler), the firmware ignores that MAC for the actual purge:
-    it scans the *entire* tag database and deletes any tag that is expired,
-    hasn't checked in for the AP's max sleep window, or hasn't been seen in
-    the last 24 hours (``web.cpp`` ``tag_cmd`` handler, ``purge`` branch).
+    Despite being sent with a ``mac`` (the handler requires one naming a
+    currently registered tag just to reach the command branch), the firmware
+    ignores that MAC for the actual purge: it sweeps the *entire* tag
+    database and deletes every tag that never checked in, hasn't been seen
+    for 24 hours, or is more than 10 minutes overdue for its expected
+    checkin (``web.cpp`` ``tag_cmd`` handler, ``purge`` branch). Prefer
+    :meth:`oepl.OEPLClient.purge_stale_tags` over sending this directly.
     """
     CLEAR = "clear"
     REFRESH = "refresh"
