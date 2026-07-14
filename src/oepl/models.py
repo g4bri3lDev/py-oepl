@@ -392,6 +392,55 @@ class APConfig:
 
 
 @dataclass
+class APListItem:
+    """Mesh AP announcement from the 'apitem' WS message."""
+
+    ip: str = ""
+    alias: str = ""
+    count: int = 0
+    channel: int = 0
+    version: str = ""  # coerce via str() — firmware may send int or hex string
+    raw: dict[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "APListItem":
+        """Parse an 'apitem' WS message dict. Tolerant of arbitrary/missing keys."""
+        return cls(
+            ip=data.get("ip", ""),
+            alias=data.get("alias", ""),
+            count=data.get("count", 0),
+            channel=data.get("channel", 0),
+            version=str(data.get("version", "")),
+            raw=dict(data),
+        )
+
+
+@dataclass
+class UploadProgress:
+    """Image-transfer progress from the 'upload' WS message."""
+
+    src: str = ""  # tag MAC
+    current: int = 0
+    total: int = 0
+    raw: dict[str, Any] = field(repr=False, default_factory=dict)
+
+    @property
+    def done(self) -> bool:
+        """True once the transfer has completed (current >= total and total > 0)."""
+        return self.total > 0 and self.current >= self.total
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "UploadProgress":
+        """Parse an 'upload' WS message dict. Tolerant of missing keys."""
+        return cls(
+            src=data.get("src", ""),
+            current=data.get("current", 0),
+            total=data.get("total", 0),
+            raw=dict(data),
+        )
+
+
+@dataclass
 class TagType:
     """Tag hardware type specification.
 

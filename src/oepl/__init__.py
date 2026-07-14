@@ -12,7 +12,7 @@ from .exceptions import (
 )
 from .image import decode_image
 from .led import Color, LEDPattern, LEDSegment
-from .models import APConfig, APInfo, APStatus, Tag, TagType
+from .models import APConfig, APInfo, APListItem, APStatus, Tag, TagType, UploadProgress
 
 # Re-export epaper-dithering types so callers don't need a separate import
 try:
@@ -30,6 +30,8 @@ __all__ = [
     "APInfo",
     "APStatus",
     "TagType",
+    "APListItem",
+    "UploadProgress",
     # Enums
     "APState",
     "RunStatus",
