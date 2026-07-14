@@ -33,7 +33,7 @@ class _WebSocketHandler:
         while not self._stop.is_set():
             try:
                 ws_url = f"ws://{self._client.host}/ws"
-                async with self._client._session.ws_connect(ws_url, heartbeat=30) as ws:
+                async with self._client.session.ws_connect(ws_url, heartbeat=30) as ws:
                     _LOGGER.debug("WebSocket connected to %s", ws_url)
                     self._client._set_connected(True)
 

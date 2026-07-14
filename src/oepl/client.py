@@ -37,8 +37,12 @@ class OEPLClient:
 
     Args:
         host: Hostname or IP address of the AP (without scheme).
-        session: Optional existing ``aiohttp.ClientSession``. When omitted a
-            new session is created and closed on :meth:`disconnect`.
+        session: Optional existing ``aiohttp.ClientSession``. When omitted, an
+            owned session is lazily created on first use (via the
+            :attr:`session` property) and closed on :meth:`disconnect`. An
+            injected session is never created, closed, or otherwise mutated by
+            the client. Note: first access of an owned session must happen
+            inside a running event loop.
         reconnect_interval: Seconds between WebSocket reconnection attempts.
     """
 
@@ -51,8 +55,8 @@ class OEPLClient:
     ) -> None:
         self.host = host
         self._owned_session = session is None
-        self._session: aiohttp.ClientSession = session or aiohttp.ClientSession()
-        self._http = _HTTPClient(host, self._session)
+        self._session: aiohttp.ClientSession | None = session
+        self._http = _HTTPClient(host, lambda: self.session)
         self._ws_handler = _WebSocketHandler(self, reconnect_interval)
         self._ws_task: asyncio.Task[None] | None = None
         self._connected = False
@@ -95,12 +99,25 @@ class OEPLClient:
             except (asyncio.CancelledError, Exception):
                 pass
             self._ws_task = None
-        if self._owned_session:
+        if self._owned_session and self._session is not None:
             await self._session.close()
+            self._session = None
 
     # ------------------------------------------------------------------
     # State
     # ------------------------------------------------------------------
+
+    @property
+    def session(self) -> aiohttp.ClientSession:
+        """The ``aiohttp.ClientSession`` used for all requests.
+
+        Returns the injected session if one was passed to the constructor.
+        Otherwise, lazily creates (and owns) a new session on first access.
+        This first access must happen inside a running event loop.
+        """
+        if self._session is None:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     @property
     def connected(self) -> bool:
