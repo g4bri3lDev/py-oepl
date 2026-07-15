@@ -770,3 +770,72 @@ async def test_set_time_explicit_epoch(client):
 
     calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/set_time"))]
     assert calls[0].kwargs["data"] == {"epoch": "1234567890"}
+
+
+# ----------------------------------------------------------------------
+# set_ap_config_item / set_sleep_window
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("key", "value", "expected"),
+    [
+        ("alias", "my-ap", "my-ap"),
+        ("channel", 11, "11"),
+        ("preview", True, "1"),
+        ("nightlyreboot", False, "0"),
+        ("timezone", "UTC", "UTC"),
+    ],
+)
+async def test_set_ap_config_item_posts_exactly_one_key(client, key, value, expected):
+    with aioresponses() as m:
+        m.post(f"{BASE}/save_apcfg", status=200, body="Ok, saved")
+        await client.set_ap_config_item(key, value)
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/save_apcfg"))]
+    assert len(calls) == 1
+    assert calls[0].kwargs["data"] == {key: expected}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key", ["sleeptime1", "sleeptime2"])
+async def test_set_ap_config_item_sleeptime_raises(client, key):
+    """Posting sleeptime1 alone null-derefs in firmware (web.cpp:659-662); both keys refused."""
+    with aioresponses() as m:
+        with pytest.raises(ValueError, match="set_sleep_window"):
+            await client.set_ap_config_item(key, 5)
+
+    assert ("POST", aiohttp.client.URL(f"{BASE}/save_apcfg")) not in m.requests
+
+
+@pytest.mark.asyncio
+async def test_set_sleep_window_posts_both_keys(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/save_apcfg", status=200, body="Ok, saved")
+        await client.set_sleep_window(23, 6)
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/save_apcfg"))]
+    assert len(calls) == 1
+    assert calls[0].kwargs["data"] == {"sleeptime1": "23", "sleeptime2": "6"}
+
+
+@pytest.mark.asyncio
+async def test_set_sleep_window_equal_hours_disable(client):
+    """Equal values disable the window (util::isSleeping returns false when equal)."""
+    with aioresponses() as m:
+        m.post(f"{BASE}/save_apcfg", status=200, body="Ok, saved")
+        await client.set_sleep_window(0, 0)
+
+    calls = m.requests[("POST", aiohttp.client.URL(f"{BASE}/save_apcfg"))]
+    assert calls[0].kwargs["data"] == {"sleeptime1": "0", "sleeptime2": "0"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("start", "end"), [(-1, 6), (24, 6), (23, -1), (23, 24)])
+async def test_set_sleep_window_rejects_out_of_range_hours(client, start, end):
+    with aioresponses() as m:
+        with pytest.raises(ValueError, match="0-23"):
+            await client.set_sleep_window(start, end)
+
+    assert ("POST", aiohttp.client.URL(f"{BASE}/save_apcfg")) not in m.requests
