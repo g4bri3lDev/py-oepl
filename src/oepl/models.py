@@ -3,9 +3,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, ClassVar
 
-from .enums import APState, ContentMode, RunStatus, WakeupReason
+from .enums import LUT, APState, ContentMode, Rotation, RunStatus, WakeupReason
+
+
+def _epoch_to_datetime(epoch: int) -> datetime | None:
+    """Convert a Unix epoch to an aware UTC datetime; 0 (unset) -> None."""
+    if not epoch:
+        return None
+    return datetime.fromtimestamp(epoch, tz=timezone.utc)
+
+
+def _ap_state(value: Any) -> APState:
+    """Coerce a raw 'apstate' value to APState, tolerating '' / None / garbage as OFFLINE."""
+    try:
+        return APState(int(value))
+    except (TypeError, ValueError):
+        return APState.OFFLINE
 
 
 @dataclass
@@ -13,35 +29,32 @@ class Tag:
     """Represents an e-paper tag connected to the AP."""
 
     mac: str
-    alias: str
-    hw_type: int
-    last_seen: int
-    next_update: int
-    next_checkin: int
-    pending: int
-    content_mode: int
-    lqi: int
-    rssi: int
-    temperature: int
-    battery_mv: int
-    wakeup_reason: int
-    capabilities: int
-    rotate: int
-    lut: int
-    update_count: int
-    is_external: bool
-    ap_ip: str
-    channel: int
-    firmware_version: int
+    alias: str = ""
+    hw_type: int = 0
+    last_seen: int = 0
+    next_update: int = 0
+    next_checkin: int = 0
+    pending: int = 0
+    content_mode: ContentMode = ContentMode.NOT_CONFIGURED
+    lqi: int = 0
+    rssi: int = 0
+    temperature: int = 0
+    battery_mv: int = 0
+    wakeup_reason: WakeupReason = WakeupReason.TIMED
+    capabilities: int = 0
+    rotate: Rotation = Rotation.NONE
+    lut: LUT = LUT.DEFAULT
+    update_count: int = 0
+    is_external: bool = False
+    ap_ip: str = ""
+    channel: int = 0
+    firmware_version: int = 0
+    hash: str = ""
+    modecfgjson: str = ""
+    invert: bool = False
+    update_last: int = 0
+    raw: dict[str, Any] = field(repr=False, default_factory=dict)
 
-    _LUT_NAMES: ClassVar[dict[int, str]] = {
-        0: "Default",
-        1: "No repeats",
-        2: "Fast (no reds)",
-        3: "Fast",
-        0x10: "OTA",
-    }
-    _ROTATE_NAMES: ClassVar[dict[int, str]] = {0: "None", 1: "90°", 2: "180°", 3: "270°"}
     _CAPABILITIES: ClassVar[list[tuple[int, str]]] = [
         (0x0001, "LED"),
         (0x0002, "Compression"),
@@ -55,61 +68,67 @@ class Tag:
     ]
 
     @property
-    def content_mode_label(self) -> str:
-        """Human-readable content mode name."""
-        try:
-            return ContentMode(self.content_mode).name.replace("_", " ").title()
-        except ValueError:
-            return str(self.content_mode)
-
-    @property
-    def wakeup_reason_label(self) -> str:
-        """Human-readable wakeup reason name."""
-        try:
-            return WakeupReason(self.wakeup_reason).name.replace("_", " ").title()
-        except ValueError:
-            return str(self.wakeup_reason)
-
-    @property
-    def lut_label(self) -> str:
-        """Human-readable LUT mode name."""
-        return self._LUT_NAMES.get(self.lut, str(self.lut))
-
-    @property
-    def rotate_label(self) -> str:
-        """Human-readable rotation label."""
-        return self._ROTATE_NAMES.get(self.rotate, str(self.rotate))
-
-    @property
     def capabilities_list(self) -> list[str]:
         """Names of all active capability bits."""
         return [name for bit, name in self._CAPABILITIES if self.capabilities & bit]
 
+    @property
+    def last_seen_at(self) -> datetime | None:
+        """``last_seen`` as an aware UTC datetime; ``None`` when unset (0)."""
+        return _epoch_to_datetime(self.last_seen)
+
+    @property
+    def next_update_at(self) -> datetime | None:
+        """``next_update`` as an aware UTC datetime; ``None`` when unset (0)."""
+        return _epoch_to_datetime(self.next_update)
+
+    @property
+    def next_checkin_at(self) -> datetime | None:
+        """``next_checkin`` as an aware UTC datetime; ``None`` when unset (0)."""
+        return _epoch_to_datetime(self.next_checkin)
+
+    @property
+    def update_last_at(self) -> datetime | None:
+        """``update_last`` as an aware UTC datetime; ``None`` when unset (0)."""
+        return _epoch_to_datetime(self.update_last)
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Tag":
-        """Parse a tag dict as returned by the AP /get_db endpoint."""
+        """Parse a tag dict as returned by the AP /get_db endpoint.
+
+        Tolerant of missing keys (typed defaults are used) except ``mac``,
+        which is required.
+        """
+        mac = data.get("mac")
+        if not mac:
+            raise ValueError("Tag data is missing required 'mac' key")
         return cls(
-            mac=data["mac"],
-            alias=data["alias"],
-            hw_type=data["hwType"],
-            last_seen=data["lastseen"],
-            next_update=data["nextupdate"],
-            next_checkin=data["nextcheckin"],
-            pending=data["pending"],
-            content_mode=data["contentMode"],
-            lqi=data["LQI"],
-            rssi=data["RSSI"],
-            temperature=data["temperature"],
-            battery_mv=data["batteryMv"],
-            wakeup_reason=data["wakeupReason"],
-            capabilities=data["capabilities"],
-            rotate=data["rotate"],
-            lut=data["lut"],
-            update_count=data["updatecount"],
-            is_external=bool(data["isexternal"]),
-            ap_ip=data["apip"],
-            channel=data["ch"],
-            firmware_version=data["ver"],
+            mac=mac,
+            alias=data.get("alias", ""),
+            hw_type=data.get("hwType", 0),
+            last_seen=data.get("lastseen", 0),
+            next_update=data.get("nextupdate", 0),
+            next_checkin=data.get("nextcheckin", 0),
+            pending=data.get("pending", 0),
+            content_mode=ContentMode(data.get("contentMode", 0)),
+            lqi=data.get("LQI", 0),
+            rssi=data.get("RSSI", 0),
+            temperature=data.get("temperature", 0),
+            battery_mv=data.get("batteryMv", 0),
+            wakeup_reason=WakeupReason(data.get("wakeupReason", 0)),
+            capabilities=data.get("capabilities", 0),
+            rotate=Rotation(data.get("rotate", 0)),
+            lut=LUT(data.get("lut", 0)),
+            update_count=data.get("updatecount", 0),
+            is_external=bool(data.get("isexternal", False)),
+            ap_ip=data.get("apip", ""),
+            channel=data.get("ch", 0),
+            firmware_version=data.get("ver", 0),
+            hash=data.get("hash", ""),
+            modecfgjson=data.get("modecfgjson", ""),
+            invert=bool(data.get("invert", False)),
+            update_last=data.get("updatelast", 0),
+            raw=dict(data),
         )
 
 
@@ -117,39 +136,42 @@ class Tag:
 class APStatus:
     """Snapshot of AP system status as reported by WebSocket 'sys' messages."""
 
-    current_time: int
-    heap: int
-    record_count: int
-    ap_state: APState
-    run_state: RunStatus
-    rssi: int
-    wifi_ssid: str
-    uptime: int
-    db_size: int
-    little_fs_free: int
-    ps_ram_free: int | None  # absent on boards without PSRAM
-    wifi_status: int
-    low_battery_count: int
-    timeout_count: int
+    current_time: int = 0
+    heap: int = 0
+    record_count: int = 0
+    ap_state: APState = APState.OFFLINE
+    run_state: RunStatus = RunStatus.STOP
+    rssi: int = 0
+    wifi_ssid: str = ""
+    uptime: int = 0
+    db_size: int = 0
+    little_fs_free: int = 0
+    ps_ram_free: int | None = None  # absent on boards without PSRAM
+    wifi_status: int = 0
+    # Only sent ~once/minute by the firmware (web.cpp:182-186); absence must not fail parsing.
+    low_battery_count: int | None = None
+    timeout_count: int | None = None
+    raw: dict[str, Any] = field(repr=False, default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "APStatus":
-        """Parse a sys-message dict from the AP WebSocket."""
+        """Parse a sys-message dict from the AP WebSocket. Tolerant of missing keys."""
         return cls(
-            current_time=data["currtime"],
-            heap=data["heap"],
-            record_count=data["recordcount"],
-            ap_state=APState(data["apstate"]),
-            run_state=RunStatus(data["runstate"]),
-            rssi=data["rssi"],
-            wifi_ssid=data["wifissid"],
-            uptime=data["uptime"],
-            db_size=data["dbsize"],
-            little_fs_free=data["littlefsfree"],
+            current_time=data.get("currtime", 0),
+            heap=data.get("heap", 0),
+            record_count=data.get("recordcount", 0),
+            ap_state=APState(data.get("apstate", 0)),
+            run_state=RunStatus(data.get("runstate", 0)),
+            rssi=data.get("rssi", 0),
+            wifi_ssid=data.get("wifissid", ""),
+            uptime=data.get("uptime", 0),
+            db_size=data.get("dbsize", 0),
+            little_fs_free=data.get("littlefsfree", 0),
             ps_ram_free=data.get("psfree"),  # conditional on BOARD_HAS_PSRAM
-            wifi_status=data["wifistatus"],
-            low_battery_count=data["lowbattcount"],
-            timeout_count=data["timeoutcount"],
+            wifi_status=data.get("wifistatus", 0),
+            low_battery_count=data.get("lowbattcount"),
+            timeout_count=data.get("timeoutcount"),
+            raw=dict(data),
         )
 
 
@@ -157,30 +179,39 @@ class APStatus:
 class APInfo:
     """Static info about the AP hardware and firmware (from /sysinfo)."""
 
-    alias: str
-    env: str
-    build_version: str
-    build_time: str
-    ap_version: str
-    psram_size: int
-    flash_size: int
-    has_c6: bool
-    has_h2: bool
-    can_rollback: bool
+    alias: str = ""
+    env: str = ""
+    build_version: str = ""
+    build_time: str = ""
+    ap_version: str = ""
+    psram_size: int = 0
+    flash_size: int = 0
+    has_c6: bool = False
+    has_h2: bool = False
+    can_rollback: bool = False
+    sha: str = ""
+    has_tslr: bool = False
+    has_flasher: bool = False
+    raw: dict[str, Any] = field(repr=False, default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "APInfo":
+        """Parse a /sysinfo dict. Tolerant of missing keys."""
         return cls(
-            alias=data["alias"],
-            env=data["env"],
-            build_version=data["buildversion"],
-            build_time=data["buildtime"],
-            ap_version=str(data["ap_version"]),
-            psram_size=data["psramsize"],
-            flash_size=data["flashsize"],
-            has_c6=bool(data["hasC6"]),
-            has_h2=bool(data["hasH2"]),
-            can_rollback=bool(data["rollback"]),
+            alias=data.get("alias", ""),
+            env=data.get("env", ""),
+            build_version=data.get("buildversion", ""),
+            build_time=data.get("buildtime", ""),
+            ap_version=str(data.get("ap_version", "")),
+            psram_size=data.get("psramsize", 0),
+            flash_size=data.get("flashsize", 0),
+            has_c6=bool(data.get("hasC6", False)),
+            has_h2=bool(data.get("hasH2", False)),
+            can_rollback=bool(data.get("rollback", False)),
+            sha=data.get("sha", ""),
+            has_tslr=bool(data.get("hasTslr", False)),
+            has_flasher=bool(data.get("hasFlasher", False)),
+            raw=dict(data),
         )
 
 
@@ -188,36 +219,43 @@ class APInfo:
 class APConfig:
     """Mutable AP configuration (from /get_ap_config, written via /save_apcfg).
 
-    Capability fields (``has_*``) are read-only flags reported by the AP firmware.
+    Capability fields (``has_*``) and other AP-reported state (``ap_state``,
+    ``tlsr``, ``save_space``) are read-only flags reported by the AP firmware.
     Config fields are writable via :meth:`to_dict` / ``save_apcfg``.
     """
 
     # Writable config
-    alias: str
-    channel: int
-    subghz_channel: int
-    led_brightness: int
-    tft_brightness: int
-    language: int
-    max_sleep: int
-    stop_sleep: int
-    timezone: str
-    preview: bool
-    nightly_reboot: bool
-    lock: bool
-    wifi_power: int
-    sleep_time1: int
-    sleep_time2: int
-    ble_enabled: bool
-    repo: str
-    env: str
-    discovery: bool
-    show_timestamp: bool
+    alias: str = ""
+    channel: int = 0
+    subghz_channel: int = 0
+    led_brightness: int = 0
+    tft_brightness: int = 0
+    language: int = 0
+    max_sleep: int = 0
+    stop_sleep: int = 0
+    timezone: str = ""
+    preview: bool = False
+    nightly_reboot: bool = False
+    lock: bool = False
+    wifi_power: int = 0
+    sleep_time1: int = 0
+    sleep_time2: int = 0
+    ble_enabled: bool = False
+    repo: str = ""
+    env: str = ""
+    discovery: bool = False
+    show_timestamp: bool = False
     # Read-only hardware capability flags (sent as string "0"/"1" by the AP)
-    has_ble: bool
-    has_c6: bool
-    has_h2: bool
-    has_sub_ghz: bool
+    has_ble: bool = False
+    has_c6: bool = False
+    has_h2: bool = False
+    has_sub_ghz: bool = False
+    # Read-only AP-reported state
+    ap_state: APState = APState.OFFLINE
+    tlsr: bool = False
+    save_space: bool = False
+    has_flasher: bool = False
+    raw: dict[str, Any] = field(repr=False, default_factory=dict)
 
     _WIFI_POWER_LABELS: ClassVar[dict[int, str]] = {
         78: "19.5 dBm",
@@ -297,35 +335,42 @@ class APConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "APConfig":
+        """Parse a /get_ap_config dict. Tolerant of missing keys."""
+
         def _flag(key: str) -> bool:
             """Capability flags are sent as string '0'/'1'; absent = False."""
             return str(data.get(key, "0")) == "1"
 
         return cls(
-            alias=data["alias"],
-            channel=data["channel"],
-            subghz_channel=data["subghzchannel"],
-            led_brightness=data["led"],
-            tft_brightness=data["tft"],
-            language=data["language"],
-            max_sleep=data["maxsleep"],
-            stop_sleep=data["stopsleep"],
-            timezone=data["timezone"],
-            preview=bool(data["preview"]),
-            nightly_reboot=bool(data["nightlyreboot"]),
-            lock=bool(data["lock"]),
-            wifi_power=data["wifipower"],
-            sleep_time1=data["sleeptime1"],
-            sleep_time2=data["sleeptime2"],
-            ble_enabled=bool(data["ble"]),
-            repo=data["repo"],
-            env=data["env"],
-            discovery=bool(data["discovery"]),
-            show_timestamp=bool(data["showtimestamp"]),
+            alias=data.get("alias", ""),
+            channel=data.get("channel", 0),
+            subghz_channel=data.get("subghzchannel", 0),
+            led_brightness=data.get("led", 0),
+            tft_brightness=data.get("tft", 0),
+            language=data.get("language", 0),
+            max_sleep=data.get("maxsleep", 0),
+            stop_sleep=data.get("stopsleep", 0),
+            timezone=data.get("timezone", ""),
+            preview=bool(data.get("preview", False)),
+            nightly_reboot=bool(data.get("nightlyreboot", False)),
+            lock=bool(data.get("lock", False)),
+            wifi_power=data.get("wifipower", 0),
+            sleep_time1=data.get("sleeptime1", 0),
+            sleep_time2=data.get("sleeptime2", 0),
+            ble_enabled=bool(data.get("ble", False)),
+            repo=data.get("repo", ""),
+            env=data.get("env", ""),
+            discovery=bool(data.get("discovery", False)),
+            show_timestamp=bool(data.get("showtimestamp", False)),
             has_ble=_flag("hasBLE"),
             has_c6=_flag("C6"),
             has_h2=_flag("H2"),
             has_sub_ghz=_flag("hasSubGhz"),
+            ap_state=_ap_state(data.get("apstate", 0)),
+            tlsr=_flag("TLSR"),
+            save_space=_flag("savespace"),
+            has_flasher=_flag("hasFlasher"),
+            raw=dict(data),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -355,6 +400,55 @@ class APConfig:
 
 
 @dataclass
+class APListItem:
+    """Mesh AP announcement from the 'apitem' WS message."""
+
+    ip: str = ""
+    alias: str = ""
+    count: int = 0
+    channel: int = 0
+    version: str = ""  # coerce via str() — firmware may send int or hex string
+    raw: dict[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "APListItem":
+        """Parse an 'apitem' WS message dict. Tolerant of arbitrary/missing keys."""
+        return cls(
+            ip=data.get("ip", ""),
+            alias=data.get("alias", ""),
+            count=data.get("count", 0),
+            channel=data.get("channel", 0),
+            version=str(data.get("version", "")),
+            raw=dict(data),
+        )
+
+
+@dataclass
+class UploadProgress:
+    """Image-transfer progress from the 'upload' WS message."""
+
+    src: str = ""  # tag MAC
+    current: int = 0
+    total: int = 0
+    raw: dict[str, Any] = field(repr=False, default_factory=dict)
+
+    @property
+    def done(self) -> bool:
+        """True once the transfer has completed (current >= total and total > 0)."""
+        return self.total > 0 and self.current >= self.total
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "UploadProgress":
+        """Parse an 'upload' WS message dict. Tolerant of missing keys."""
+        return cls(
+            src=data.get("src", ""),
+            current=data.get("current", 0),
+            total=data.get("total", 0),
+            raw=dict(data),
+        )
+
+
+@dataclass
 class TagType:
     """Tag hardware type specification.
 
@@ -381,6 +475,7 @@ class TagType:
     template: dict[str, Any] = field(default_factory=dict)
     use_template: Any = None
     zlib_compression: Any = None
+    raw: dict[str, Any] = field(repr=False, default_factory=dict)
 
     @classmethod
     def from_dict(cls, type_id: int, data: dict[str, Any]) -> "TagType":
@@ -399,4 +494,87 @@ class TagType:
             template=data.get("template", {}),
             use_template=data.get("usetemplate"),
             zlib_compression=data.get("zlib_compression"),
+            raw=dict(data),
+        )
+
+
+@dataclass
+class WifiConfig:
+    """Stored WiFi/network settings (from ``/get_wifi_config``, web.cpp:749-762).
+
+    The firmware reads these back out of its ``Preferences`` "wifi" namespace
+    and always includes all six keys (empty string when unset), plus the
+    AP's own MAC address.
+    """
+
+    ssid: str = ""
+    password: str = ""
+    ip: str = ""
+    mask: str = ""
+    gateway: str = ""
+    dns: str = ""
+    mac: str = ""
+    raw: dict[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "WifiConfig":
+        """Parse a ``/get_wifi_config`` dict. Tolerant of missing keys."""
+        return cls(
+            ssid=data.get("ssid", ""),
+            password=data.get("pw", ""),
+            ip=data.get("ip", ""),
+            mask=data.get("mask", ""),
+            gateway=data.get("gw", ""),
+            dns=data.get("dns", ""),
+            mac=data.get("mac", ""),
+            raw=dict(data),
+        )
+
+
+@dataclass
+class WifiNetwork:
+    """A single scanned WiFi network, as reported by ``/get_ssid_list``."""
+
+    ssid: str = ""
+    channel: int = 0
+    rssi: int = 0
+    encryption: int = 0
+    raw: dict[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "WifiNetwork":
+        """Parse a single entry of the ``networks`` array. Tolerant of missing keys."""
+        return cls(
+            ssid=data.get("ssid", ""),
+            channel=data.get("ch", 0),
+            rssi=data.get("rssi", 0),
+            encryption=data.get("enc", 0),
+            raw=dict(data),
+        )
+
+
+@dataclass
+class SSIDList:
+    """Scan results from ``/get_ssid_list`` (web.cpp:764-788).
+
+    ``scan_status`` mirrors ESP32 ``WiFi.scanComplete()`` semantics: ``-1``
+    means a scan is currently running, ``-2`` means no scan has been started
+    yet, and any value ``>= 0`` is the number of networks found by the last
+    completed scan (``networks`` is capped at 50 entries by the firmware
+    regardless of that count). The firmware (re)starts a background scan on
+    almost every call to this endpoint, so polling it repeatedly is the
+    normal way to eventually observe a non-negative ``scan_status``.
+    """
+
+    scan_status: int = 0
+    networks: list[WifiNetwork] = field(default_factory=list)
+    raw: dict[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SSIDList":
+        """Parse a ``/get_ssid_list`` dict. Tolerant of missing keys."""
+        return cls(
+            scan_status=data.get("scanstatus", 0),
+            networks=[WifiNetwork.from_dict(n) for n in data.get("networks", [])],
+            raw=dict(data),
         )

@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "py-oepl"
-version = "0.1.0"
-description = "Async Python client for the OpenDisplay AP (OpenEPaperLink)"
+version = "0.2.0"
+description = "Async Python client for the OpenEPaperLink AP"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -15,7 +15,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -26,12 +25,19 @@ classifiers = [
 dependencies = [
     "aiohttp>=3.9",
     "pillow>=10.0",
-    "numpy>=1.20",
-    "epaper-dithering>=0.6.4",
-    "rich>=14.3.4",
 ]
 
 [project.optional-dependencies]
+cli = [
+    "rich>=14.3.4",
+]
+dither = [
+    "epaper-dithering>=0.6.4",
+]
+all = [
+    "rich>=14.3.4",
+    "epaper-dithering>=0.6.4",
+]
 dev = [
     "pytest>=9.0",
     "pytest-asyncio>=1.3",
@@ -55,8 +61,6 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-exclude = ["src/oepl/g5_decoder.py"]
-force-exclude = true
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
@@ -64,7 +68,3 @@ select = ["E", "F", "W", "I"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-
-[[tool.mypy.overrides]]
-module = "oepl.g5_decoder"
-ignore_errors = true

@@ -1,6 +1,6 @@
-"""oepl — async Python client for the OpenDisplay AP."""
+"""oepl — async Python client for the OpenEPaperLink AP."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 from .client import OEPLClient
 from .enums import LUT, APState, ContentMode, Rotation, RunStatus, TagCommand, WakeupReason
 from .exceptions import (
@@ -10,9 +10,22 @@ from .exceptions import (
     OEPLResponseError,
     OEPLTimeoutError,
 )
-from .image import decode_image
+from .files import FileEntry, Files
+from .image import decode_image, decode_image_pil
 from .led import Color, LEDPattern, LEDSegment
-from .models import APConfig, APInfo, APStatus, Tag, TagType
+from .models import (
+    APConfig,
+    APInfo,
+    APListItem,
+    APStatus,
+    SSIDList,
+    Tag,
+    TagType,
+    UploadProgress,
+    WifiConfig,
+    WifiNetwork,
+)
+from .tag_handle import TagHandle
 
 # Re-export epaper-dithering types so callers don't need a separate import
 try:
@@ -24,12 +37,21 @@ except ImportError:
 __all__ = [
     # Client
     "OEPLClient",
+    "TagHandle",
     # Models
     "Tag",
     "APConfig",
     "APInfo",
     "APStatus",
     "TagType",
+    "APListItem",
+    "UploadProgress",
+    "WifiConfig",
+    "WifiNetwork",
+    "SSIDList",
+    # Files
+    "Files",
+    "FileEntry",
     # Enums
     "APState",
     "RunStatus",
@@ -50,6 +72,7 @@ __all__ = [
     "OEPLResponseError",
     # Image
     "decode_image",
+    "decode_image_pil",
     # Dithering (from epaper-dithering)
     "DitherMode",
     "ColorScheme",

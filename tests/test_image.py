@@ -61,3 +61,24 @@ def test_decode_esl_raw_g5_falls_through():
     # Should not raise; will fall through and return padded/raw data
     result = _decode_esl_raw(bad_g5, tt)
     assert isinstance(result, bytes)
+
+
+def test_decode_esl_raw_g5_matching_geometry_but_malformed_falls_through():
+    """A G5 payload whose header geometry matches the tag but whose stream is
+    truncated/malformed must not leak a raw IndexError out of decode.
+
+    The header (152x200, mode=1) passes the _looks_like_g5 sniff for this tag,
+    so a real decode is attempted; the codec must translate the internal
+    bounds error into a G5DecoderError, which _decode_esl_raw swallows and
+    falls through to zlib/raw handling.
+    """
+    tt = TagType(
+        type_id=103,
+        width=152,
+        height=200,
+        bpp=2,
+        color_table={"white": [255, 255, 255], "black": [0, 0, 0], "red": [255, 0, 0]},
+    )
+    payload = bytes.fromhex("069800c80001a747054965")  # header 152x200 mode=1
+    result = _decode_esl_raw(payload, tt)
+    assert isinstance(result, bytes)
