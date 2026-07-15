@@ -5,11 +5,10 @@ from __future__ import annotations
 import io
 import logging
 import zlib
-from typing import cast
 
 from PIL import Image
 
-from .g5_decoder import parse_g5_header, process_g5
+from .g5_decoder import G5DecoderError, decode_g5, parse_g5_header
 from .models import TagType
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,23 +48,36 @@ def decode_image_pil(raw_data: bytes, tag_type: TagType) -> Image.Image:
     return _bitmap_to_image(bitmap, tag_type)
 
 
+def _looks_like_g5(data: bytes, tag_type: TagType) -> bool:
+    """Return True if ``data`` sniffs as a decodable G5 payload for this tag.
+
+    The zlib/raw payloads share the leading bytes' value space with a G5
+    header, so a bare header parse is not enough to tell them apart. We only
+    treat data as G5 when it parses, uses a G5 compression mode (1 or 2), and
+    the header geometry matches the tag's dimensions in either orientation —
+    the same check the decoder used to perform, hoisted here so non-matching
+    payloads fall through quietly instead of raising and logging.
+    """
+    try:
+        _header_size, width, height, compression_mode = parse_g5_header(data)
+    except G5DecoderError:
+        return False
+
+    if compression_mode not in (1, 2):
+        return False
+
+    dims = (tag_type.width, tag_type.height)
+    return width in dims and height in dims
+
+
 def _decode_esl_raw(data: bytes, tag_type: TagType) -> bytes:
     """Decompress raw AP image data to a flat bitmap."""
-    # Check for G5 compression
-    if len(data) >= 6:
+    # Check for G5 compression.
+    if len(data) >= 6 and _looks_like_g5(data, tag_type):
         try:
-            header_size, width, height, compression_mode = parse_g5_header(data)
-            if compression_mode in [1, 2]:
-                tagtype_dict = {
-                    "width": tag_type.width,
-                    "height": tag_type.height,
-                    "bpp": tag_type.bpp,
-                    "rotatebuffer": tag_type.rotatebuffer,
-                    "colortable": tag_type.color_table,
-                }
-                return cast(bytes, process_g5(data, tagtype_dict, output_format="bytes"))
-        except Exception as exc:
-            _LOGGER.warning("G5 decode failed, falling through to zlib/raw: %s", exc)
+            return decode_g5(data)
+        except G5DecoderError as exc:
+            _LOGGER.debug("G5 sniff matched but decode failed, falling through: %s", exc)
 
     # Calculate expected bitmap size
     width = tag_type.height if tag_type.rotatebuffer % 2 else tag_type.width

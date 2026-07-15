@@ -25,7 +25,6 @@ classifiers = [
 dependencies = [
     "aiohttp>=3.9",
     "pillow>=10.0",
-    "numpy>=1.20",  # g5 decoder only; revisit after g5 rework
 ]
 
 [project.optional-dependencies]
@@ -62,8 +61,6 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-exclude = ["src/oepl/g5_decoder.py"]
-force-exclude = true
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
@@ -71,7 +68,3 @@ select = ["E", "F", "W", "I"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-
-[[tool.mypy.overrides]]
-module = "oepl.g5_decoder"
-ignore_errors = true
