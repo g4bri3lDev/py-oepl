@@ -521,15 +521,22 @@ def decode_g5(data: bytes) -> bytes:
     bytes_per_line = (width + 7) // 8
     output_buffer = bytearray(height * bytes_per_line)
 
-    for y in range(height):
-        decoder.y = y
-        decode_result = decoder.decode_line()
-        if decode_result != _G5_SUCCESS:
-            raise G5DecodeError(f"Decoding error on line {y}: {decode_result}")
+    # A truncated or malformed payload can drive the bitstream loop past the
+    # bounds of its flip/output arrays. Translate any such low-level error
+    # into a G5DecodeError so callers only ever have to catch G5DecoderError;
+    # the decoder must never leak a raw IndexError/ValueError.
+    try:
+        for y in range(height):
+            decoder.y = y
+            decode_result = decoder.decode_line()
+            if decode_result != _G5_SUCCESS:
+                raise G5DecodeError(f"Decoding error on line {y}: {decode_result}")
 
-        decoder.draw_line(output_buffer, y * bytes_per_line)
+            decoder.draw_line(output_buffer, y * bytes_per_line)
 
-        # Swap current and reference flip arrays for the next line.
-        decoder.cur_flips, decoder.ref_flips = decoder.ref_flips, decoder.cur_flips
+            # Swap current and reference flip arrays for the next line.
+            decoder.cur_flips, decoder.ref_flips = decoder.ref_flips, decoder.cur_flips
+    except (IndexError, ValueError) as exc:
+        raise G5DecodeError(f"Malformed G5 payload: {exc}") from exc
 
     return bytes(output_buffer)
