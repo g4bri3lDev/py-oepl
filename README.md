@@ -314,6 +314,85 @@ await client.restore_db(backup)          # DESTRUCTIVE — replaces the tag data
 > (web.cpp:659-662), so posting either key alone can crash the AP. Use `set_sleep_window()`,
 > which always sends the pair in a single request.
 
+#### Files
+
+`client.files` browses and edits the AP's LittleFS content filesystem, via the firmware's `/edit`
+(`SPIFFSEditor.cpp`) and `/check_file`/`/littlefs_put` (`ota.cpp`) handlers:
+
+```python
+# List entries directly under a directory (non-recursive)
+entries = await client.files.list("/")            # list[FileEntry]
+for e in entries:
+    print(e.type, e.name, e.size)                  # size is None for directories
+
+# Download raw bytes; None if the AP 404s (missing file or directory)
+data = await client.files.download("current/AABBCCDDEEFF.raw")
+
+# Write bytes to a path (via /littlefs_put, not /edit's own upload — see below)
+await client.files.upload("/temp/scratch.bin", b"...")
+
+# Delete a path (the AP always answers 200 here, whether or not it existed — see below)
+await client.files.delete("temp/scratch.bin")
+
+# Query size + MD5 without downloading
+info = await client.files.check("/temp/scratch.bin")   # {"filesize": int, "md5": str} | None
+```
+
+> **Path convention differs between the two underlying endpoints** (verified against firmware
+> source, not docs): `list()`/`download()`/`delete()` go through `/edit`, which always prepends a
+> `/` to the path you give it internally, so this library strips a leading slash before sending.
+> `check()`/`upload()` go through `/check_file`/`/littlefs_put`, which use the path exactly as
+> given with **no** normalization, so this library adds a leading slash if one is missing. In
+> practice you can pass paths with or without a leading `/` to any of the five methods and they'll
+> behave consistently with each other and with what `list()` returns.
+
+> **`upload()` deliberately uses `/littlefs_put`, not `/edit`'s own POST.** `/edit`'s upload
+> requires the multipart file field to be named `data` with the target path as its filename, and
+> its "success" response is just a post-hoc `_fs.exists()` check. `/littlefs_put` streams straight
+> to disk and reports `507` on a real write failure (e.g. disk full), which is a more useful
+> signal.
+
+> **`delete()` always responds `200`, even for a path that never existed** — `SPIFFSEditor.cpp`
+> calls `_fs.remove()` without checking (or reporting) whether it actually succeeded. A successful
+> call doesn't guarantee anything was actually removed.
+
+> **`check()` never 404s.** Unlike almost every other AP endpoint, a missing file gets a `200`
+> response with `{"filesize": 0, "md5": ""}` (`ota.cpp:73-107`) instead of a 404. This library
+> treats that specific sentinel (empty `md5`) as "doesn't exist" and returns `None` — a genuinely
+> empty *existing* file still hashes to `d41d8cd98f00b204e9800998ecf8427e`, never `""`.
+
+#### OTA / firmware update
+
+**All of these flash firmware and/or reboot the AP. There is no confirmation step or dry-run —
+calling one is a commitment, and none of them are exercised against a real AP by this library's
+test suite.**
+
+```python
+# Flash new AP firmware downloaded (by the AP itself) from a URL, then reboot
+await client.update_ota("http://example.com/firmware.bin", md5="deadbeef...", size=1234567)
+
+# Roll back to the previously running firmware image, then reboot
+await client.rollback()
+
+# Run any pending post-update cleanup (deletes files listed in /update_actions.json)
+await client.run_update_actions()
+
+# Flash the companion C6/H2 sub-GHz radio (only on AP builds that have one)
+await client.update_c6("http://example.com/c6-firmware.bin")
+```
+
+> **The HTTP response from `update_ota`/`update_c6` comes back almost immediately** — the AP
+> launches a background task and acks ("In progress" / "Ok") before the download or flash actually
+> happens, so these calls do not block for the duration of the update. Progress and completion are
+> reported only over the WebSocket (`wsSerial` log lines ending in a literal `[reboot]` marker for
+> a full reboot) — subscribe to `on_log()` and especially `on_connection_change()` to track when
+> the AP actually finishes and comes back.
+
+> **`rollback()` and `update_c6()` fail with `OEPLResponseError` (HTTP 400)** if there's no
+> rollback image available, or the AP build wasn't compiled with C6/H2 support, respectively.
+> Check `get_sysinfo()`'s `rollback`/`hasC6`/`hasH2` fields (or `client.rollback`/hardware docs)
+> before calling if you want to avoid the round trip.
+
 #### Live updates via WebSocket
 
 ```python
@@ -376,6 +455,7 @@ sent, in case a field you need hasn't been mapped to a typed attribute yet.
 | `WifiConfig` | `ssid`, `password`, `ip`, `mask`, `gateway`, `dns`, `mac`, `raw` |
 | `WifiNetwork` | `ssid`, `channel`, `rssi`, `encryption`, `raw` |
 | `SSIDList` | `scan_status`, `networks` (`list[WifiNetwork]`), `raw` |
+| `FileEntry` | `type` (`"file"`/`"dir"`), `name`, `size` (`None` for directories), `raw` |
 
 Notes:
 
