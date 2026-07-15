@@ -14,7 +14,9 @@ from PIL import Image
 
 from ._http import _HTTPClient
 from .enums import LUT, ContentMode, Rotation, TagCommand
+from .exceptions import OEPLConnectionError, OEPLTimeoutError
 from .files import Files
+from .image import decode_image_pil
 from .led import LEDPattern
 from .models import (
     APConfig,
@@ -27,6 +29,7 @@ from .models import (
     UploadProgress,
     WifiConfig,
 )
+from .tag_handle import TagHandle
 from .websocket import _WebSocketHandler
 
 try:
@@ -87,6 +90,7 @@ class OEPLClient:
         self._ws_task: asyncio.Task[None] | None = None
         self._connected = False
         self._tags: dict[str, Tag] = {}
+        self._tag_type_cache: dict[int, TagType | None] = {}
 
         # Callback registries
         self._tag_update_cbs: list[Callable[[Tag], None]] = []
@@ -166,17 +170,31 @@ class OEPLClient:
     # Callback subscriptions — all return an unsubscribe callable
     # ------------------------------------------------------------------
 
-    def on_tag_update(self, cb: Callable[[Tag], None]) -> Callable[[], None]:
+    def on_tag_update(self, cb: Callable[[Tag], None], *, mac: str | None = None) -> Callable[[], None]:
         """Subscribe to tag update events.
 
         Args:
             cb: Called with the updated :class:`Tag` on each WebSocket tag message.
+            mac: When given, *cb* only fires for updates to this MAC
+                (case-insensitive). Omitted (default) subscribes to all tags,
+                matching prior behavior.
 
         Returns:
             Callable that removes the subscription when called.
         """
-        self._tag_update_cbs.append(cb)
-        return lambda: self._tag_update_cbs.remove(cb)
+        registered: Callable[[Tag], None]
+        if mac is not None:
+            mac_upper = mac.upper()
+
+            def _filtered(tag: Tag) -> None:
+                if tag.mac == mac_upper:
+                    cb(tag)
+
+            registered = _filtered
+        else:
+            registered = cb
+        self._tag_update_cbs.append(registered)
+        return lambda: self._tag_update_cbs.remove(registered)
 
     def on_ap_status(self, cb: Callable[[APStatus], None]) -> Callable[[], None]:
         """Subscribe to AP system status updates."""
@@ -265,6 +283,15 @@ class OEPLClient:
         self._fire_tag_update(tag)
         return tag
 
+    def tag(self, mac: str) -> TagHandle:
+        """Return a :class:`~oepl.tag_handle.TagHandle` bound to a single tag MAC.
+
+        A thin, stateless-except-``(client, mac)`` convenience wrapper — every
+        method on the handle delegates back to this client. *mac* is
+        normalized to uppercase once, at construction time.
+        """
+        return TagHandle(self, mac)
+
     async def upload_image(
         self,
         mac: str,
@@ -281,6 +308,8 @@ class OEPLClient:
         alias: str | None = None,
         preload_type: int = 0,
         preload_lut: int = 0,
+        wait: bool = False,
+        wait_timeout: float = 90.0,
     ) -> None:
         """Upload an image to a tag through the AP.
 
@@ -333,7 +362,34 @@ class OEPLClient:
                 unchanged on the tag) unless explicitly passed.
             preload_type: Type for image preloading (``0`` = disabled).
             preload_lut: LUT for preloaded image.
+            wait: If ``True``, block after the upload until the tag actually
+                redraws: the AP's WebSocket ``tags`` message for this MAC
+                reports a changed ``hash`` *and* ``pending == 0`` (the
+                on-hardware-verified render-complete signature — a changed
+                hash alone can still be mid-transfer). Requires the
+                WebSocket to already be connected (:attr:`connected`); raises
+                :class:`~oepl.exceptions.OEPLConnectionError` immediately
+                (before uploading) if it isn't, rather than hanging until
+                *wait_timeout*.
+            wait_timeout: Seconds to wait for render completion when
+                ``wait=True``. Raises
+                :class:`~oepl.exceptions.OEPLTimeoutError` if exceeded.
+
+        Raises:
+            OEPLConnectionError: If ``wait=True`` but the WebSocket isn't
+                connected.
+            OEPLTimeoutError: If ``wait=True`` and the tag doesn't report
+                render completion within *wait_timeout* seconds.
         """
+        if wait and not self._connected:
+            raise OEPLConnectionError(
+                "upload_image(wait=True) requires an active WebSocket connection to observe "
+                "render completion (tags messages); call connect()/use 'async with' first."
+            )
+
+        mac_upper = mac.upper()
+        pre_hash = self._tags[mac_upper].hash if mac_upper in self._tags else None
+
         client_dithered = False
         if isinstance(image, Image.Image):
             if dither_image is not None:
@@ -353,7 +409,7 @@ class OEPLClient:
         ttl_minutes = max(1, ttl // 60) if ttl > 0 else 0
 
         fields: dict[str, Any] = {
-            "mac": mac.upper(),
+            "mac": mac_upper,
             "contentmode": str(content_mode),
             "ttl": str(ttl_minutes),
         }
@@ -377,6 +433,9 @@ class OEPLClient:
         fields["image"] = (filename, image_bytes, content_type)
 
         await self._http.post_multipart("imgupload", fields)
+
+        if wait:
+            await self._wait_for_render_complete(mac_upper, pre_hash, wait_timeout)
 
     async def save_tag_config(
         self,
@@ -482,18 +541,25 @@ class OEPLClient:
         encoded = pattern.encode()
         await self._http.get_text(f"led_flash?mac={mac.upper()}&pattern={encoded}")
 
-    async def get_tag_type(self, hw_type: int) -> TagType | None:
+    async def get_tag_type(self, hw_type: int, *, use_cache: bool = True) -> TagType | None:
         """Fetch the tag type definition for a given hw_type from the AP.
 
         The AP serves its own copy of tag type definitions under ``/tagtypes/``,
         so this works entirely offline — no GitHub or internet access required.
 
+        Results (including "no definition for this hw_type" misses) are cached
+        in-memory per :class:`OEPLClient` instance, since tag type definitions
+        are static for a given AP/firmware. Pass ``use_cache=False`` to bypass
+        the cache and re-fetch/refresh the cached value.
+
         Returns ``None`` if the AP has no definition for this hw_type (404).
         """
+        if use_cache and hw_type in self._tag_type_cache:
+            return self._tag_type_cache[hw_type]
         data = await self._http.get_raw(f"tagtypes/{hw_type:02X}.json")
-        if data is None:
-            return None
-        return TagType.from_dict(hw_type, json.loads(data))
+        result = TagType.from_dict(hw_type, json.loads(data)) if data is not None else None
+        self._tag_type_cache[hw_type] = result
+        return result
 
     async def get_image_raw(self, mac: str) -> bytes | None:
         """Fetch the raw stored image for a tag from the AP.
@@ -502,6 +568,96 @@ class OEPLClient:
         Callers are responsible for decoding with :func:`oepl.decode_image`.
         """
         return await self._http.get_raw(f"current/{mac.upper()}.raw")
+
+    async def get_image(self, mac: str) -> "Image.Image | None":
+        """Fetch and decode a tag's currently stored image in one call.
+
+        Replaces the manual chain of :meth:`get_tag`/cache, :meth:`get_tag_type`,
+        :meth:`get_image_raw`, and :func:`oepl.decode_image_pil`. Uses the
+        cached :class:`Tag` (from :attr:`tags`) if available, otherwise fetches
+        it; tag type lookups go through :meth:`get_tag_type`'s cache.
+
+        Returns ``None`` if the AP has no record for *mac*, or no image stored
+        for it yet (404 on ``current/<mac>.raw``).
+
+        Raises:
+            ValueError: If the tag is known but the AP has no tag type
+                definition for its ``hw_type`` — decoding requires the type's
+                geometry (width/height/bpp/color table) and can't proceed
+                without it.
+        """
+        mac_upper = mac.upper()
+        tag = self._tags.get(mac_upper)
+        if tag is None:
+            tag = await self.get_tag(mac_upper)
+        if tag is None:
+            return None
+
+        tag_type = await self.get_tag_type(tag.hw_type)
+        if tag_type is None:
+            raise ValueError(
+                f"No tag type definition for hw_type {tag.hw_type} (tag {mac_upper}); "
+                "cannot decode image without tag geometry."
+            )
+
+        raw = await self.get_image_raw(mac_upper)
+        if raw is None:
+            return None
+        return decode_image_pil(raw, tag_type)
+
+    async def wait_for_checkin(self, mac: str, *, timeout: float = 90.0) -> Tag:
+        """Wait for the next WebSocket tag-update message for *mac*.
+
+        Subscribes a temporary, MAC-filtered :meth:`on_tag_update` callback
+        (always unsubscribed before returning/raising, success or failure) and
+        resolves with the next :class:`Tag` reported for that MAC — not
+        necessarily one reflecting any particular change; just the next
+        check-in/update the AP reports. Requires the WebSocket to be
+        connected to ever resolve.
+
+        Raises:
+            OEPLTimeoutError: If no update arrives within *timeout* seconds.
+        """
+        mac_upper = mac.upper()
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[Tag] = loop.create_future()
+
+        def _on_update(tag: Tag) -> None:
+            if not future.done():
+                future.set_result(tag)
+
+        unsubscribe = self.on_tag_update(_on_update, mac=mac_upper)
+        try:
+            return await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.TimeoutError as exc:
+            raise OEPLTimeoutError(f"Timed out after {timeout}s waiting for {mac_upper} to check in") from exc
+        finally:
+            unsubscribe()
+
+    async def _wait_for_render_complete(self, mac: str, pre_hash: str | None, timeout: float) -> None:
+        """Wait until *mac* reports a changed image hash and pending == 0.
+
+        This hash-change-plus-pending-zero pair is the render-complete signal
+        verified against real hardware: a hash change alone can still be a
+        transfer in progress, but firmware clears ``pending`` only once the
+        tag has actually redrawn with the new content.
+        """
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[None] = loop.create_future()
+
+        def _on_update(tag: Tag) -> None:
+            if not future.done() and tag.hash != pre_hash and tag.pending == 0:
+                future.set_result(None)
+
+        unsubscribe = self.on_tag_update(_on_update, mac=mac)
+        try:
+            await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.TimeoutError as exc:
+            raise OEPLTimeoutError(
+                f"Timed out after {timeout}s waiting for {mac} to finish rendering the uploaded image"
+            ) from exc
+        finally:
+            unsubscribe()
 
     async def upload_json(self, mac: str, data: dict[str, Any] | str, *, ttl: int = 0) -> None:
         """Push a JSON payload to a tag for content mode 19 (JSON/custom rendering).

@@ -11,7 +11,7 @@ from .exceptions import (
     OEPLTimeoutError,
 )
 from .files import FileEntry, Files
-from .image import decode_image
+from .image import decode_image, decode_image_pil
 from .led import Color, LEDPattern, LEDSegment
 from .models import (
     APConfig,
@@ -25,6 +25,7 @@ from .models import (
     WifiConfig,
     WifiNetwork,
 )
+from .tag_handle import TagHandle
 
 # Re-export epaper-dithering types so callers don't need a separate import
 try:
@@ -36,6 +37,7 @@ except ImportError:
 __all__ = [
     # Client
     "OEPLClient",
+    "TagHandle",
     # Models
     "Tag",
     "APConfig",
@@ -70,6 +72,7 @@ __all__ = [
     "OEPLResponseError",
     # Image
     "decode_image",
+    "decode_image_pil",
     # Dithering (from epaper-dithering)
     "DitherMode",
     "ColorScheme",

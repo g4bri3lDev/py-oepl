@@ -27,8 +27,26 @@ def decode_image(raw_data: bytes, tag_type: TagType) -> bytes:
     Returns:
         JPEG-encoded image bytes
     """
+    return _image_to_jpeg(decode_image_pil(raw_data, tag_type))
+
+
+def decode_image_pil(raw_data: bytes, tag_type: TagType) -> Image.Image:
+    """Decode raw image bytes from the AP to a :class:`PIL.Image.Image`.
+
+    Same decoding pipeline as :func:`decode_image`, but returns the
+    intermediate PIL image instead of re-encoding it as JPEG — useful when
+    the caller wants to inspect/further process the pixels rather than just
+    display the bytes.
+
+    Args:
+        raw_data: Raw image bytes as returned by the AP /get?mac=... endpoint
+        tag_type: TagType for the tag that owns this image
+
+    Returns:
+        Decoded PIL Image (mode "RGB").
+    """
     bitmap = _decode_esl_raw(raw_data, tag_type)
-    return _bitmap_to_jpeg(bitmap, tag_type)
+    return _bitmap_to_image(bitmap, tag_type)
 
 
 def _decode_esl_raw(data: bytes, tag_type: TagType) -> bytes:
@@ -97,8 +115,8 @@ def _decode_esl_raw(data: bytes, tag_type: TagType) -> bytes:
     return data
 
 
-def _bitmap_to_jpeg(data: bytes, tag_type: TagType) -> bytes:
-    """Convert a flat bitmap to JPEG using the tag's color table."""
+def _bitmap_to_image(data: bytes, tag_type: TagType) -> Image.Image:
+    """Convert a flat bitmap to a PIL Image using the tag's color table."""
     native_width = tag_type.width
     native_height = tag_type.height
     if tag_type.rotatebuffer % 2:
@@ -167,6 +185,11 @@ def _bitmap_to_jpeg(data: bytes, tag_type: TagType) -> bytes:
     elif tag_type.rotatebuffer == 3:
         img = img.transpose(Image.Transpose.ROTATE_90)
 
+    return img
+
+
+def _image_to_jpeg(img: Image.Image) -> bytes:
+    """Encode a PIL Image as JPEG bytes (quality=95, matching prior behavior)."""
     output = io.BytesIO()
     img.save(output, format="JPEG", quality=95)
     output.seek(0)

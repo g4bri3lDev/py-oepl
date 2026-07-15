@@ -210,14 +210,23 @@ await client.set_led("AABBCCDDEEFF", pattern)
 # Push a JSON payload for content mode 19 (custom/JSON rendering)
 await client.upload_json("AABBCCDDEEFF", {"text": "hello"}, ttl=300)
 
-# Fetch the tag type definition (served by the AP, works offline)
+# Fetch the tag type definition (served by the AP, works offline).
+# Results are cached per-client (including "no definition" misses);
+# pass use_cache=False to bypass/refresh.
 tag_type = await client.get_tag_type(0x16)  # returns TagType | None
 
-# Download and decode the stored image for a tag
-from oepl import decode_image
+# Download and decode the stored image for a tag: fetch tag -> tag type -> raw
+# -> decode, in one call. None if there's no image stored yet (404); raises
+# ValueError if the tag is known but its type definition isn't (can't decode
+# without geometry).
+image = await client.get_image("AABBCCDDEEFF")  # PIL.Image | None
+
+# Lower-level building blocks, if you want to decode yourself
+from oepl import decode_image, decode_image_pil
 raw = await client.get_image_raw("AABBCCDDEEFF")  # bytes | None
 if raw and tag_type:
-    jpeg_bytes = decode_image(raw, tag_type)
+    jpeg_bytes = decode_image(raw, tag_type)      # -> bytes (JPEG)
+    pil_image = decode_image_pil(raw, tag_type)   # -> PIL.Image
 
 # Fetch raw image bytes directly (optionally by queued md5 hash)
 data = await client.get_image_data("AABBCCDDEEFF")  # bytes | None
@@ -270,7 +279,87 @@ Key points:
   reaches the tag.
 - `/imgupload` **returns an empty body on success**, so a failed upload (malformed multipart body,
   unsupported image data, etc.) is generally *not* detectable from the HTTP response alone — the
-  call will not raise just because the tag didn't actually redraw.
+  call will not raise just because the tag didn't actually redraw. Pass `wait=True` (below) if you
+  need confirmation.
+
+##### Waiting for render completion
+
+`upload_image(..., wait=True)` blocks until the tag has actually redrawn, instead of returning as
+soon as the AP accepts the HTTP upload:
+
+```python
+await client.upload_image("AABBCCDDEEFF", img, wait=True, wait_timeout=90.0)
+```
+
+This requires the WebSocket to already be connected (`client.connected`) — it's how this library
+observes the tag's next check-in. If it isn't connected, `upload_image` raises
+`OEPLConnectionError` immediately rather than hanging. Internally it captures the tag's current
+`hash` before uploading, then waits for a WebSocket `tags` update reporting *both* a changed
+`hash` **and** `pending == 0` — a changed hash alone can still mean a transfer in progress; firmware
+only clears `pending` once the tag has finished redrawing. This exact signature was verified
+against real hardware. Raises `OEPLTimeoutError` if that doesn't happen within `wait_timeout`
+seconds (default 90s).
+
+#### Working with a single tag
+
+For code that's structured around one tag at a time (e.g. a Home Assistant entity bound to one
+MAC), `client.tag(mac)` returns a `TagHandle` — a thin wrapper that remembers the MAC so you stop
+threading it through every call:
+
+```python
+tag = client.tag("AABBCCDDEEFF")   # MAC normalized to uppercase once
+
+tag.mac                             # "AABBCCDDEEFF"
+tag.info                            # Tag | None — live view of client.tags.get(tag.mac)
+
+await tag.set_alias("kitchen display")
+await tag.refresh()                 # send_tag_cmd(..., TagCommand.REFRESH)
+await tag.reboot()
+await tag.scan()
+await tag.deep_sleep()
+await tag.clear_pending()
+await tag.save_config(rotate=Rotation.R90)
+await tag.upload_json({"text": "hello"}, ttl=300)
+await tag.delete()
+
+tag_type = await tag.get_type()     # TagType | None (via the tag's cached hw_type)
+image = await tag.get_image()       # PIL.Image | None — see get_image() below
+
+# Fires only for this tag's WebSocket updates
+unsub = tag.on_update(lambda t: print("checked in:", t.mac))
+
+updated = await tag.wait_for_checkin(timeout=90.0)  # awaits the NEXT WS update for this tag
+```
+
+##### `TagHandle.upload_image` — automatic size fitting
+
+Unlike `client.upload_image()`, which passes images through raw (see the AP-does-no-scaling
+warning above), `TagHandle.upload_image()` validates or fixes the size against the tag's actual
+resolution (looked up via `get_type()`):
+
+```python
+from PIL import Image
+
+img = Image.open("label.png")
+
+# Default: raise ValueError naming both sizes on any mismatch
+await tag.upload_image(img)
+
+# Letterbox onto a white canvas, preserving aspect ratio
+await tag.upload_image(img, fit="contain")
+
+# Resize + center-crop to exactly fill the tag
+await tag.upload_image(img, fit="cover")
+
+# Forwarded straight through to client.upload_image, including wait=
+await tag.upload_image(img, fit="cover", wait=True, ttl=300)
+```
+
+Size validation only applies to `PIL.Image.Image` input — raw `bytes` skip it entirely (there's no
+way to read an encoded blob's pixel dimensions without decoding it first, which this method
+doesn't do). If the tag or its tag type is unknown to the AP, `fit="strict"` raises `ValueError`;
+`fit="contain"`/`"cover"` instead log a `warning` and upload unresized, since there's no target
+size to compute.
 
 #### AP operations
 
@@ -437,6 +526,21 @@ Each `on_*` method returns an unsubscribe callable:
 unsub = client.on_tag_update(my_callback)
 # later:
 unsub()
+```
+
+`on_tag_update` accepts an optional `mac=` filter so the callback only fires for one tag
+(case-insensitive) — `client.tag(mac).on_update(cb)` is the same thing spelled through a
+`TagHandle`:
+
+```python
+unsub = client.on_tag_update(my_callback, mac="AABBCCDDEEFF")
+```
+
+To await a single upcoming update instead of subscribing a persistent callback, use
+`wait_for_checkin` (also available as `tag.wait_for_checkin()`):
+
+```python
+tag = await client.wait_for_checkin("AABBCCDDEEFF", timeout=90.0)  # Tag, or OEPLTimeoutError
 ```
 
 ### Models

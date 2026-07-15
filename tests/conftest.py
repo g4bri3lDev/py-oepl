@@ -141,6 +141,27 @@ def real_apconfig_dict():
 
 
 @pytest.fixture
+def tagtype_04_dict():
+    """M2 2.6" tag type definition (hw_type=4, 296x152, 2bpp) as served by /tagtypes/04.json."""
+    return {
+        "version": 1,
+        "name": 'M2 2.6" BWR',
+        "width": 296,
+        "height": 152,
+        "rotatebuffer": 0,
+        "bpp": 2,
+        "colortable": {
+            "white": [255, 255, 255],
+            "black": [0, 0, 0],
+            "red": [255, 0, 0],
+        },
+        "shortlut": 2,
+        "options": [],
+        "contentids": [],
+    }
+
+
+@pytest.fixture
 def real_sysinfo_dict():
     """Real /sysinfo payload captured live from firmware 2.91."""
     return {
