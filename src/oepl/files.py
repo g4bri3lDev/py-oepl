@@ -9,20 +9,27 @@ content filesystem:
   raw-upload pair, originally meant for OTA-adjacent file staging but usable
   for arbitrary files.
 
-Path handling is **not** consistent between the two halves (verified against
-firmware source, not docs):
+Path handling is **not** consistent between these handlers — not even within
+``/edit`` itself (verified against firmware source, not docs):
 
-- ``/edit``'s GET (``list``/``download``) and DELETE handlers all prepend a
-  ``/`` to whatever path you give them internally
+- ``/edit``'s ``edit``/``download`` GET branches and its DELETE handler all
+  prepend a ``/`` to whatever path you give them internally
   (``_fs.open("/" + request->arg(...))``, ``SPIFFSEditor.cpp``). Passing an
   already-rooted path (e.g. ``"/foo.bin"``) would double it to ``"//foo.bin"``,
-  so :meth:`list`, :meth:`download`, and :meth:`delete` strip a leading slash
-  before building the query/form value.
-- ``/check_file`` and ``/littlefs_put`` use the path exactly as given, with
-  **no** normalization (``ota.cpp`` opens ``request->getParam("path")->value()``
-  verbatim). :meth:`check` and :meth:`upload` therefore add a leading slash if
-  one isn't already present, so paths from :meth:`list` (which are unrooted)
-  work interchangeably across all four methods.
+  so :meth:`download` and :meth:`delete` strip a leading slash before building
+  the query/form value.
+- ``/edit``'s ``list`` branch, by contrast, passes its param **verbatim** to
+  ``_fs.open()`` (``SPIFFSEditor.cpp:82-84`` — no ``/`` prepend), and the
+  ESP32 VFS layer rejects paths that don't start with ``/``, so an unrooted
+  ``list`` value silently returns an empty listing. Likewise ``/check_file``
+  and ``/littlefs_put`` use their ``path`` param exactly as given
+  (``ota.cpp``). :meth:`list`, :meth:`check`, and :meth:`upload` therefore
+  add a leading slash if one isn't already present.
+
+Net effect: every method normalizes in the direction its endpoint needs, so
+paths with or without a leading ``/`` — including the **unrooted** names
+:meth:`list` returns for subdirectory entries — work interchangeably across
+all five methods.
 """
 
 from __future__ import annotations
@@ -82,8 +89,16 @@ class Files:
         Non-recursive (the AP also supports a ``recursive`` flag, not exposed
         here since its recursion silently skips ``/www``, ``/tagtypes``, and
         ``/current`` — see ``listFilesRecursively``, ``SPIFFSEditor.cpp:46``).
+
+        *dir* must be rooted on the wire: unlike ``/edit``'s other branches,
+        the ``list`` handler passes the param verbatim to ``_fs.open()``
+        (``SPIFFSEditor.cpp:82-84``), and the ESP32 VFS layer rejects paths
+        without a leading ``/`` — the AP then silently returns ``[]``. Since
+        subdirectory entries in the listing itself are unrooted (``"current"``,
+        not ``"/current"``), a leading slash is added here when missing so
+        ``list(entry.name)`` just works.
         """
-        items = await self._http.get_json_any(f"edit?list={dir}")
+        items = await self._http.get_json_any(f"edit?list={_ensure_leading_slash(dir)}")
         return [FileEntry.from_dict(item) for item in items]
 
     async def download(self, path: str) -> bytes | None:

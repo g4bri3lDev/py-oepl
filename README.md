@@ -338,13 +338,14 @@ await client.files.delete("temp/scratch.bin")
 info = await client.files.check("/temp/scratch.bin")   # {"filesize": int, "md5": str} | None
 ```
 
-> **Path convention differs between the two underlying endpoints** (verified against firmware
-> source, not docs): `list()`/`download()`/`delete()` go through `/edit`, which always prepends a
-> `/` to the path you give it internally, so this library strips a leading slash before sending.
-> `check()`/`upload()` go through `/check_file`/`/littlefs_put`, which use the path exactly as
-> given with **no** normalization, so this library adds a leading slash if one is missing. In
-> practice you can pass paths with or without a leading `/` to any of the five methods and they'll
-> behave consistently with each other and with what `list()` returns.
+> **Path conventions differ per endpoint — even within `/edit` itself** (verified against
+> firmware source, not docs): `download()`/`delete()` hit `/edit` branches that prepend a `/` to
+> the path internally, so this library strips a leading slash before sending. `list()`'s branch,
+> by contrast, passes the param verbatim to the filesystem — and the ESP32 VFS rejects unrooted
+> paths, so the AP would silently return `[]` — so this library **adds** a leading slash there,
+> as it also does for `check()`/`upload()` (`/check_file`/`/littlefs_put` use the path exactly as
+> given). In practice you can pass paths with or without a leading `/` to any of the five methods
+> — including the unrooted subdirectory names `list()` returns, so `list(entry.name)` just works.
 
 > **`upload()` deliberately uses `/littlefs_put`, not `/edit`'s own POST.** `/edit`'s upload
 > requires the multipart file field to be named `data` with the target path as its filename, and

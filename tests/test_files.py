@@ -74,6 +74,17 @@ async def test_list_custom_dir_query_param(client):
     assert result == []
 
 
+@pytest.mark.asyncio
+async def test_list_unrooted_dir_gets_leading_slash(client):
+    """The /edit list branch passes its param verbatim to _fs.open(), and the ESP32 VFS
+    rejects unrooted paths (the AP silently lists nothing) -- so list() must root the path.
+    Subdirectory FileEntry.name values are unrooted, making list(entry.name) the common case."""
+    with aioresponses() as m:
+        m.get(f"{BASE}/edit?list=/sub", status=200, body=b"[]", content_type="application/json")
+        result = await client.files.list("sub")
+    assert result == []
+
+
 # ---------------------------------------------------------------------
 # download()
 # ---------------------------------------------------------------------
