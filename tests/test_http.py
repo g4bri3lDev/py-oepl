@@ -90,6 +90,47 @@ async def test_404_releases_response(http_client):
 
 
 @pytest.mark.asyncio
+async def test_delete_form_sends_delete_verb_with_data(http_client):
+    with aioresponses() as m:
+        m.delete(f"{BASE}/edit", status=200, body="DELETE: foo.bin")
+        result = await http_client.delete_form("edit", {"path": "foo.bin"})
+    assert result == "DELETE: foo.bin"
+
+
+@pytest.mark.asyncio
+async def test_delete_form_raises_on_error_body(http_client):
+    with aioresponses() as m:
+        m.delete(f"{BASE}/edit", status=200, body="Error: nope")
+        with pytest.raises(OEPLResponseError):
+            await http_client.delete_form("edit", {"path": "foo.bin"})
+
+
+@pytest.mark.asyncio
+async def test_get_json_any_parses_bare_array(http_client):
+    with aioresponses() as m:
+        m.get(f"{BASE}/edit", status=200, body=b'[{"a": 1}, {"b": 2}]', content_type="application/json")
+        result = await http_client.get_json_any("edit")
+    assert result == [{"a": 1}, {"b": 2}]
+
+
+@pytest.mark.asyncio
+async def test_post_form_custom_timeout_is_passed_through(http_client):
+    import aiohttp
+
+    custom = aiohttp.ClientTimeout(total=30)
+    with aioresponses() as m:
+        m.post(f"{BASE}/update_ota", status=200, body="In progress")
+        await http_client.post_form("update_ota", {"url": "x"}, timeout=custom)
+
+    from aiohttp.client import URL
+
+    recorded = m.requests[("POST", URL(f"{BASE}/update_ota"))]
+    assert len(recorded) == 1
+    _args, kwargs = recorded[0]
+    assert kwargs["timeout"] == custom
+
+
+@pytest.mark.asyncio
 async def test_non200_releases_response(http_client):
     with aioresponses() as m:
         m.get(f"{BASE}/broken", status=500, body="boom")

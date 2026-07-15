@@ -90,8 +90,21 @@ class _HTTPClient:
         except OEPLNotFoundError:
             return None
 
-    async def post_form(self, path: str, data: dict[str, Any]) -> str:
-        resp = await self._request("POST", path, data=data)
+    async def post_form(
+        self,
+        path: str,
+        data: dict[str, Any],
+        *,
+        timeout: aiohttp.ClientTimeout | None = None,
+    ) -> str:
+        resp = await self._request("POST", path, data=data, timeout=timeout or _DEFAULT_TIMEOUT)
+        body = await resp.text()
+        _raise_if_error_body(resp.status, body)
+        return body
+
+    async def delete_form(self, path: str, data: dict[str, Any]) -> str:
+        """DELETE with a form-encoded body (SPIFFSEditor's ``/edit`` delete)."""
+        resp = await self._request("DELETE", path, data=data)
         body = await resp.text()
         _raise_if_error_body(resp.status, body)
         return body
@@ -101,6 +114,14 @@ class _HTTPClient:
         body = await resp.text()
         _raise_if_error_body(resp.status, body)
         return body
+
+    async def get_json_any(self, path: str) -> Any:
+        """Like :meth:`get_json`, but for endpoints whose body is not a JSON object
+
+        (e.g. ``/edit?list=`` returns a bare JSON array).
+        """
+        resp = await self._request("GET", path)
+        return await resp.json(content_type=None)
 
     async def post_multipart(self, path: str, fields: dict[str, Any]) -> None:
         """POST multipart/form-data; retries up to 3x on timeout with exponential backoff.

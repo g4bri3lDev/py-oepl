@@ -14,6 +14,7 @@ from PIL import Image
 
 from ._http import _HTTPClient
 from .enums import LUT, ContentMode, Rotation, TagCommand
+from .files import Files
 from .led import LEDPattern
 from .models import (
     APConfig,
@@ -37,6 +38,12 @@ except ImportError:
 
 _LOGGER = logging.getLogger(__name__)
 
+# /update_ota and /update_c6 launch a background FreeRTOS task and ack almost
+# immediately ("In progress"/"Ok") rather than blocking for the real transfer,
+# but a generous timeout is still used defensively in case the AP is busy
+# with other single-threaded work at that exact moment (see docstrings).
+_OTA_TIMEOUT = aiohttp.ClientTimeout(total=30)
+
 
 class OEPLClient:
     """Async client for the OpenEPaperLink Access Point (AP).
@@ -46,6 +53,12 @@ class OEPLClient:
         async with OEPLClient("192.168.1.100") as client:
             client.on_tag_update(lambda tag: print(tag))
             tags = client.tags
+            listing = await client.files.list()
+
+    Attributes:
+        files: :class:`~oepl.files.Files` — browse/read/write/delete files on
+            the AP's LittleFS content filesystem (``/edit``, ``/check_file``,
+            ``/littlefs_put``).
 
     Args:
         host: Hostname or IP address of the AP (without scheme).
@@ -69,6 +82,7 @@ class OEPLClient:
         self._owned_session = session is None
         self._session: aiohttp.ClientSession | None = session
         self._http = _HTTPClient(host, lambda: self.session)
+        self.files = Files(self._http)
         self._ws_handler = _WebSocketHandler(self, reconnect_interval)
         self._ws_task: asyncio.Task[None] | None = None
         self._connected = False
@@ -756,6 +770,98 @@ class OEPLClient:
         **this is destructive and cannot be undone.**
         """
         await self._http.post_multipart("restore_db", {"file": ("tagDB.json", data, "application/json")})
+
+    # ------------------------------------------------------------------
+    # OTA / firmware update — ALL of these flash firmware and/or reboot the
+    # AP. There is no confirmation step; calling one of these methods is a
+    # commitment. None of them are exercised against a real AP by this
+    # library's test suite.
+    # ------------------------------------------------------------------
+
+    async def update_ota(self, url: str, md5: str, size: int) -> None:
+        """Flash new AP firmware downloaded from *url*, then reboot. **DESTRUCTIVE.**
+
+        POSTs to ``/update_ota`` (``handleUpdateOTA``, ``ota.cpp:195``). The
+        HTTP response ("In progress") comes back almost immediately — the AP
+        launches a background FreeRTOS task (``firmwareUpdateTask``) that
+        downloads *url*, verifies it against *md5*/*size*, writes it via the
+        ``Update`` library, and reboots; this call does **not** block for
+        that duration. Progress and completion are reported only over the
+        WebSocket (``wsSerial`` log lines, ending in ``"Reboot system now"``
+        + a literal ``[reboot]`` marker) — use :meth:`on_log` and especially
+        :meth:`on_connection_change` to track when the AP actually comes back.
+
+        Args:
+            url: HTTP(S) URL the AP itself will download the firmware image
+                from (must be reachable from the AP, not from this process).
+            md5: Expected MD5 hash of the firmware image (``Update.setMD5``).
+            size: Firmware image size in bytes (``Update.begin(size)``).
+
+        Raises:
+            OEPLResponseError: If *url*/*md5*/*size* are missing (400) or the
+                AP reports a download/flash error in the response body.
+        """
+        await self._http.post_form(
+            "update_ota",
+            {"url": url, "md5": md5, "size": str(size)},
+            timeout=_OTA_TIMEOUT,
+        )
+
+    async def rollback(self) -> None:
+        """Roll back to the previously running firmware image, then reboot. **DESTRUCTIVE.**
+
+        POSTs to ``/rollback`` (``handleRollback``, ``ota.cpp:288``). Only
+        succeeds if the AP has a rollback image available
+        (``Update.canRollBack()``); otherwise the AP responds ``400``
+        ("Rollback not allowed" / "Rollback failed"), surfaced here as
+        :class:`~oepl.exceptions.OEPLResponseError`. On success the AP waits
+        ~1s in-line then reboots — use :meth:`on_connection_change` to track
+        it.
+
+        Raises:
+            OEPLResponseError: If no rollback image is available, or the
+                rollback itself fails.
+        """
+        await self._http.post_form("rollback", {})
+
+    async def run_update_actions(self) -> None:
+        """Run post-update cleanup steps from ``/update_actions.json``. **Deletes files.**
+
+        POSTs to ``/update_actions`` (``handleUpdateActions``,
+        ``ota.cpp:401``). Reads a ``{"deletefile": [...]}`` manifest (left
+        behind by some OTA updates to clean up files made obsolete by the
+        new firmware) and deletes each listed path from the AP's
+        filesystem, then removes the manifest itself. Always responds
+        ``200`` — "No update actions needed" if there's no manifest, "Clean
+        up finished" otherwise — so it's safe to call speculatively after
+        any update, even if nothing needs cleaning up. Does not reboot.
+        """
+        await self._http.post_form("update_actions", {})
+
+    async def update_c6(self, url: str) -> None:
+        """Flash the companion C6/H2 sub-GHz radio from *url*. **DESTRUCTIVE.**
+
+        POSTs to ``/update_c6`` (``handleUpdateC6``, ``ota.cpp:382``). Only
+        implemented on AP builds compiled with sub-GHz radio support
+        (``C6_OTA_FLASHING``); other builds respond ``400`` ("... flashing
+        not implemented"), surfaced as
+        :class:`~oepl.exceptions.OEPLResponseError` — check
+        :attr:`~oepl.models.APConfig` (or ``get_sysinfo()``'s ``hasC6``)
+        before calling this. Like :meth:`update_ota`, the HTTP response
+        ("Ok") returns quickly once the flashing task launches; the AP then
+        stops its serial task, flashes the sub-radio over the shared UART,
+        and reinitializes it, coming back online without necessarily
+        rebooting the whole AP. Track completion via :meth:`on_log`.
+
+        Args:
+            url: HTTP(S) URL the AP will download the sub-radio firmware
+                image from.
+
+        Raises:
+            OEPLResponseError: If *url* is missing (400), or this AP build
+                doesn't support C6/H2 flashing (400).
+        """
+        await self._http.post_form("update_c6", {"url": url}, timeout=_OTA_TIMEOUT)
 
     # ------------------------------------------------------------------
     # Internal helpers (called by _WebSocketHandler)

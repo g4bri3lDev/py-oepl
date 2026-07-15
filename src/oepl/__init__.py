@@ -10,6 +10,7 @@ from .exceptions import (
     OEPLResponseError,
     OEPLTimeoutError,
 )
+from .files import FileEntry, Files
 from .image import decode_image
 from .led import Color, LEDPattern, LEDSegment
 from .models import (
@@ -46,6 +47,9 @@ __all__ = [
     "WifiConfig",
     "WifiNetwork",
     "SSIDList",
+    # Files
+    "Files",
+    "FileEntry",
     # Enums
     "APState",
     "RunStatus",
