@@ -556,6 +556,73 @@ class OEPLClient:
         """Write an AP configuration to /save_apcfg."""
         await self._http.post_form("save_apcfg", config.to_dict())
 
+    async def set_ap_config_item(self, key: str, value: str | int | bool) -> None:
+        """Set a single AP configuration item via ``/save_apcfg``.
+
+        Sends a POST containing only *key* — the firmware reads each config
+        param behind its own ``hasParam`` guard (web.cpp:613-688), so absent
+        params are left unchanged and single-key writes are safe... with one
+        exception: when ``sleeptime1`` is present, the firmware reads
+        ``sleeptime2`` **unguarded** (web.cpp:659-662 — no ``hasParam`` check
+        of its own), so posting ``sleeptime1`` without ``sleeptime2``
+        dereferences a null ``AsyncWebParameter*`` and can crash the AP.
+        This method therefore refuses both keys — use
+        :meth:`set_sleep_window`, which always sends the pair together.
+
+        Valid keys: ``alias``, ``channel``, ``subghzchannel``, ``led``,
+        ``tft``, ``language``, ``maxsleep``, ``stopsleep``, ``preview``,
+        ``nightlyreboot``, ``lock``, ``ble``, ``wifipower``, ``timezone``,
+        ``discovery``, ``showtimestamp``, ``repo``, ``env``
+        (plus ``sleeptime1``/``sleeptime2`` via :meth:`set_sleep_window` only).
+
+        Args:
+            key: Config item name (the AP's wire name, see list above).
+            value: New value. ``bool`` is coerced to ``"1"``/``"0"``;
+                ``int`` and ``str`` are sent as-is.
+
+        Raises:
+            ValueError: If *key* is ``"sleeptime1"`` or ``"sleeptime2"``.
+        """
+        if key in ("sleeptime1", "sleeptime2"):
+            raise ValueError(
+                "sleeptime1/sleeptime2 must be set together; use set_sleep_window(). "
+                "Posting sleeptime1 alone crashes the AP firmware (web.cpp:659-662 "
+                "reads sleeptime2 unguarded whenever sleeptime1 is present)."
+            )
+        coerced = ("1" if value else "0") if isinstance(value, bool) else str(value)
+        await self._http.post_form("save_apcfg", {key: coerced})
+
+    async def set_sleep_window(self, start_hour: int, end_hour: int) -> None:
+        """Set the AP's nightly no-refresh ("sleep") window via ``/save_apcfg``.
+
+        Always posts ``sleeptime1`` and ``sleeptime2`` together in a single
+        request — the firmware reads ``sleeptime2`` unconditionally whenever
+        ``sleeptime1`` is present (web.cpp:659-662), so the pair must never
+        be split across requests (see :meth:`set_ap_config_item`).
+
+        During the window (whole hours, AP-local time) the AP suspends
+        content refreshes. Equal values disable the window entirely — the
+        firmware's ``util::isSleeping`` returns false when
+        ``sleeptime1 == sleeptime2`` (util.h:115) — so
+        ``set_sleep_window(0, 0)`` turns it off, matching the web UI's "off"
+        state. The window may wrap midnight (e.g. ``start_hour=23,
+        end_hour=6``).
+
+        Args:
+            start_hour: Hour (0-23) the sleep window begins.
+            end_hour: Hour (0-23) the sleep window ends.
+
+        Raises:
+            ValueError: If either hour is outside 0-23.
+        """
+        for name, hour in (("start_hour", start_hour), ("end_hour", end_hour)):
+            if not 0 <= hour <= 23:
+                raise ValueError(f"{name} must be in 0-23, got {hour}")
+        await self._http.post_form(
+            "save_apcfg",
+            {"sleeptime1": str(start_hour), "sleeptime2": str(end_hour)},
+        )
+
     async def reboot_ap(self) -> None:
         """Reboot the AP."""
         await self._http.post_form("reboot", {})

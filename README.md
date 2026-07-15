@@ -281,6 +281,14 @@ await client.save_ap_config(config)
 await client.set_time()                # defaults to the current time; pass epoch=... to override
 await client.reboot_ap()
 
+# Change a single config item without touching the rest (omission-safe on the AP)
+await client.set_ap_config_item("alias", "kitchen-ap")
+await client.set_ap_config_item("preview", True)   # bools are sent as "1"/"0"
+
+# Nightly no-refresh window (hours 0-23, AP-local; equal hours = off)
+await client.set_sleep_window(23, 6)
+await client.set_sleep_window(0, 0)   # disable
+
 # Template variables usable as {key} in JSON templates / content definitions
 await client.set_variable("owner", "alice")
 await client.set_variables({"owner": "alice", "room": "kitchen"})
@@ -300,6 +308,11 @@ await client.restore_db(backup)          # DESTRUCTIVE — replaces the tag data
 > `ssid="factory"` is even more destructive — it wipes WiFi credentials, the tag database, and
 > OTA files before rebooting — so this method raises `ValueError` for `ssid="factory"` unless you
 > pass `force=True`.
+
+> **`set_ap_config_item` refuses `sleeptime1`/`sleeptime2`** (raises `ValueError`): the firmware
+> reads `sleeptime2` unguarded whenever `sleeptime1` is present in a `/save_apcfg` POST
+> (web.cpp:659-662), so posting either key alone can crash the AP. Use `set_sleep_window()`,
+> which always sends the pair in a single request.
 
 #### Live updates via WebSocket
 
