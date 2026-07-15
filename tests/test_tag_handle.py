@@ -438,6 +438,38 @@ async def test_get_tag_type_use_cache_false_bypasses(client, tagtype_04_dict):
     assert len(m.requests[("GET", aiohttp.client.URL(f"{BASE}/tagtypes/04.json"))]) == 2
 
 
+@pytest.mark.asyncio
+async def test_get_tag_type_uses_uppercase_hex_path(client):
+    """Regression test for the tagtype filename-case fix.
+
+    The AP serves tag type definitions under uppercase-hex filenames
+    (e.g. /tagtypes/E0.json), not lowercase. hw_type=0xE0 is a
+    hardware-verified real tag type whose hex digits include a letter,
+    so this genuinely distinguishes ``{hw_type:02X}`` from
+    ``{hw_type:02x}`` — unlike the other tests in this file, which all
+    use hw_type values (4, 99) with no letters in their hex form and so
+    would pass unchanged even if the format string were reverted to
+    lowercase.
+    """
+    tagtype_e0_dict = {
+        "version": 1,
+        "name": "Some 0xE0 tag",
+        "width": 400,
+        "height": 300,
+    }
+    with aioresponses() as m:
+        # Only the uppercase path is mocked. If the client requested the
+        # lowercase path instead, aioresponses would raise for the
+        # unmatched request.
+        m.get(f"{BASE}/tagtypes/E0.json", payload=tagtype_e0_dict)
+        result = await client.get_tag_type(0xE0)
+
+    assert result is not None
+    assert result.width == 400
+    assert result.height == 300
+    assert len(m.requests[("GET", aiohttp.client.URL(f"{BASE}/tagtypes/E0.json"))]) == 1
+
+
 # ----------------------------------------------------------------------
 # Filtered on_tag_update
 # ----------------------------------------------------------------------
