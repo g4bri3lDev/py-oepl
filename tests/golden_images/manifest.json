@@ -1,0 +1,171 @@
+[
+ {
+  "mac": "0000026C3C223B1E",
+  "hw_type": 1,
+  "name": "M2 2.9\"",
+  "size": [
+   296,
+   128
+  ],
+  "bpp": 2,
+  "rotatebuffer": 1,
+  "compression": "g5(mode=0)",
+  "raw_bytes": 9472
+ },
+ {
+  "mac": "00007E1F5FF9B29B",
+  "hw_type": 51,
+  "name": "M3 2.9\"",
+  "size": [
+   384,
+   168
+  ],
+  "bpp": 2,
+  "rotatebuffer": 3,
+  "compression": "raw/zlib",
+  "raw_bytes": 40
+ },
+ {
+  "mac": "00000335042F3E10",
+  "hw_type": 4,
+  "name": "M2 2.6\"",
+  "size": [
+   296,
+   152
+  ],
+  "bpp": 2,
+  "rotatebuffer": 1,
+  "compression": "g5(mode=2)",
+  "raw_bytes": 836
+ },
+ {
+  "mac": "00000282DB413B12",
+  "hw_type": 1,
+  "name": "M2 2.9\"",
+  "size": [
+   296,
+   128
+  ],
+  "bpp": 2,
+  "rotatebuffer": 1,
+  "compression": "g5(mode=1)",
+  "raw_bytes": 1308
+ },
+ {
+  "mac": "00000282E08E3B19",
+  "hw_type": 1,
+  "name": "M2 2.9\"",
+  "size": [
+   296,
+   128
+  ],
+  "bpp": 2,
+  "rotatebuffer": 1,
+  "compression": "g5(mode=2)",
+  "raw_bytes": 1496
+ },
+ {
+  "mac": "000002BD04423B1F",
+  "hw_type": 1,
+  "name": "M2 2.9\"",
+  "size": [
+   296,
+   128
+  ],
+  "bpp": 2,
+  "rotatebuffer": 1,
+  "compression": "g5(mode=2)",
+  "raw_bytes": 555
+ },
+ {
+  "mac": "000002CEF95D3B17",
+  "hw_type": 1,
+  "name": "M2 2.9\"",
+  "size": [
+   296,
+   128
+  ],
+  "bpp": 2,
+  "rotatebuffer": 1,
+  "compression": "g5(mode=2)",
+  "raw_bytes": 963
+ },
+ {
+  "mac": "FDFFFBFA6C05D611",
+  "hw_type": 103,
+  "name": "HS 2.00\" BWY",
+  "size": [
+   152,
+   200
+  ],
+  "bpp": 2,
+  "rotatebuffer": 1,
+  "compression": "raw/zlib",
+  "raw_bytes": 833
+ },
+ {
+  "mac": "6A13326FAD164840",
+  "hw_type": 84,
+  "name": "HS BW 2.13\"",
+  "size": [
+   256,
+   128
+  ],
+  "bpp": 1,
+  "rotatebuffer": 1,
+  "compression": "raw/zlib",
+  "raw_bytes": 547
+ },
+ {
+  "mac": "72373C634C911943",
+  "hw_type": 96,
+  "name": "HS BWY 3.5\"",
+  "size": [
+   384,
+   184
+  ],
+  "bpp": 2,
+  "rotatebuffer": 1,
+  "compression": "raw/zlib",
+  "raw_bytes": 642
+ },
+ {
+  "mac": "0000032EA4F33E11",
+  "hw_type": 4,
+  "name": "M2 2.6\"",
+  "size": [
+   296,
+   152
+  ],
+  "bpp": 2,
+  "rotatebuffer": 1,
+  "compression": "g5(mode=1)",
+  "raw_bytes": 2657
+ },
+ {
+  "mac": "6400000000000006",
+  "hw_type": 17,
+  "name": "M2 2.9\" (UC8151)",
+  "size": [
+   296,
+   128
+  ],
+  "bpp": 2,
+  "rotatebuffer": 1,
+  "compression": "g5(mode=0)",
+  "raw_bytes": 9472
+ },
+ {
+  "mac": "E9CE7E362B331C41",
+  "hw_type": 46,
+  "name": "M3 9.7\"",
+  "size": [
+   960,
+   672
+  ],
+  "bpp": 2,
+  "rotatebuffer": 2,
+  "compression": "raw/zlib",
+  "raw_bytes": 8757
+ }
+]
