@@ -52,19 +52,6 @@
   "raw_bytes": 1308
  },
  {
-  "mac": "00000282E08E3B19",
-  "hw_type": 1,
-  "name": "M2 2.9\"",
-  "size": [
-   296,
-   128
-  ],
-  "bpp": 2,
-  "rotatebuffer": 1,
-  "compression": "g5(mode=2)",
-  "raw_bytes": 1496
- },
- {
   "mac": "000002BD04423B1F",
   "hw_type": 1,
   "name": "M2 2.9\"",
@@ -115,32 +102,6 @@
   "rotatebuffer": 1,
   "compression": "raw/zlib",
   "raw_bytes": 547
- },
- {
-  "mac": "72373C634C911943",
-  "hw_type": 96,
-  "name": "HS BWY 3.5\"",
-  "size": [
-   384,
-   184
-  ],
-  "bpp": 2,
-  "rotatebuffer": 1,
-  "compression": "raw/zlib",
-  "raw_bytes": 642
- },
- {
-  "mac": "0000032EA4F33E11",
-  "hw_type": 4,
-  "name": "M2 2.6\"",
-  "size": [
-   296,
-   152
-  ],
-  "bpp": 2,
-  "rotatebuffer": 1,
-  "compression": "g5(mode=1)",
-  "raw_bytes": 2657
  },
  {
   "mac": "6400000000000006",
