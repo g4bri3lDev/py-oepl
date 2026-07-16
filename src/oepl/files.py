@@ -37,7 +37,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from ._http import _HTTPClient
+from ._http import _HTTPClient, quote_query_value
 
 
 def _strip_leading_slash(path: str) -> str:
@@ -98,7 +98,7 @@ class Files:
         not ``"/current"``), a leading slash is added here when missing so
         ``list(entry.name)`` just works.
         """
-        items = await self._http.get_json_any(f"edit?list={_ensure_leading_slash(dir)}")
+        items = await self._http.get_json_any(f"edit?list={quote_query_value(_ensure_leading_slash(dir))}")
         return [FileEntry.from_dict(item) for item in items]
 
     async def download(self, path: str) -> bytes | None:
@@ -109,7 +109,7 @@ class Files:
         request ever reaches a response, so the built-in ``onNotFound`` 404
         handler answers instead).
         """
-        return await self._http.get_raw(f"edit?download={_strip_leading_slash(path)}")
+        return await self._http.get_raw(f"edit?download={quote_query_value(_strip_leading_slash(path))}")
 
     async def upload(self, path: str, data: bytes) -> None:
         """Write *data* to *path* on the AP's filesystem via ``/littlefs_put``.
@@ -132,7 +132,7 @@ class Files:
             "path": _ensure_leading_slash(path),
             "data": ("upload.bin", data, "application/octet-stream"),
         }
-        await self._http.post_multipart("littlefs_put", fields)
+        await self._http.post_multipart("littlefs_put", fields, check_body=True)
 
     async def delete(self, path: str) -> None:
         """Delete *path* via ``HTTP DELETE /edit`` with a ``path`` form field.
@@ -159,7 +159,9 @@ class Files:
         empty string. On success returns the parsed
         ``{"filesize": int, "md5": str}`` dict as-is.
         """
-        data: dict[str, Any] = await self._http.get_json_any(f"check_file?path={_ensure_leading_slash(path)}")
+        data: dict[str, Any] = await self._http.get_json_any(
+            f"check_file?path={quote_query_value(_ensure_leading_slash(path))}"
+        )
         if not data.get("md5"):
             return None
         return data
