@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/g4bri3lDev/py-oepl/compare/v0.2.0...v0.2.1) (2026-07-16)
+
+
+### Bug Fixes
+
+* CI and golden-image hygiene ([0d33b77](https://github.com/g4bri3lDev/py-oepl/commit/0d33b776ff1441d03848c3301e9a691eddc47c72))
+* license is Apache-2.0, add LICENSE file (metadata wrongly claimed MIT) ([564bd6c](https://github.com/g4bri3lDev/py-oepl/commit/564bd6c80f50758a30935f9aea4eea564ede103b))
+
 ## [0.2.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.1.0...v0.2.0) (2026-07-16)
 
 
