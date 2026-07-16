@@ -215,10 +215,11 @@ await client.upload_json("AABBCCDDEEFF", {"text": "hello"}, ttl=300)
 # pass use_cache=False to bypass/refresh.
 tag_type = await client.get_tag_type(0x16)  # returns TagType | None
 
-# Download and decode the stored image for a tag: fetch tag -> tag type -> raw
-# -> decode, in one call. None if there's no image stored yet (404); raises
-# ValueError if the tag is known but its type definition isn't (can't decode
-# without geometry).
+# Download and decode the stored image for a tag: fetch tag -> raw -> tag type
+# -> decode, in one call. None if there's no image stored yet (404) -- checked
+# before the tag type lookup, so an unrecognized hw_type with no stored image
+# still returns None; raises ValueError only if an image IS stored but its
+# type definition isn't (can't decode without geometry).
 image = await client.get_image("AABBCCDDEEFF")  # PIL.Image | None
 
 # Lower-level building blocks, if you want to decode yourself
@@ -263,8 +264,9 @@ Key points:
 - `image` may be a `PIL.Image.Image` or raw bytes. PIL images are always converted and encoded as
   JPEG (`quality=100, subsampling=0`) before upload — the AP decodes uploaded images exclusively
   with TJpgDec, which cannot read PNG or other formats.
-- `content_mode` selects the tag content mode assigned by this upload: `24` (default) is a static
-  AP-managed image; `25` marks it as an externally/Home-Assistant-managed image.
+- `content_mode` selects the tag content mode assigned by this upload: `24` (default,
+  `ContentMode.EXTERNAL_IMAGE`) is a static AP-managed image; `25` (`ContentMode.HOME_ASSISTANT`)
+  marks it as an externally/Home-Assistant-managed image.
 - `rotate`, `lut`, `invert`, and `alias` are **omission-sensitive**: the AP persists whichever of
   these fields are present in the request onto the tag's stored record. Leaving them at their
   `None` default means the field is not sent at all, and the tag's existing configuration for

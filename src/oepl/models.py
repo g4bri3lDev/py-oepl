@@ -16,6 +16,31 @@ def _epoch_to_datetime(epoch: int) -> datetime | None:
     return datetime.fromtimestamp(epoch, tz=timezone.utc)
 
 
+def _as_int(value: Any, default: int) -> int:
+    """Coerce *value* to ``int``, falling back to *default* if that's not possible.
+
+    Tolerant parsing already covers *missing* keys via ``dict.get(key, default)``;
+    this extends the same tolerance to *present-but-malformed* values (e.g. a
+    firmware payload with ``lastseen: "not-a-number"``), which would otherwise
+    parse fine and then raise deep inside a ``*_at`` datetime property. The raw,
+    unparsed value is unaffected — it's still preserved verbatim on ``.raw``.
+    """
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_optional_int(value: Any) -> int | None:
+    """Like :func:`_as_int`, but for fields whose typed default is ``None`` (absent/unset)."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _ap_state(value: Any) -> APState:
     """Coerce a raw 'apstate' value to APState, tolerating '' / None / garbage as OFFLINE."""
     try:
@@ -105,29 +130,29 @@ class Tag:
         return cls(
             mac=mac,
             alias=data.get("alias", ""),
-            hw_type=data.get("hwType", 0),
-            last_seen=data.get("lastseen", 0),
-            next_update=data.get("nextupdate", 0),
-            next_checkin=data.get("nextcheckin", 0),
-            pending=data.get("pending", 0),
-            content_mode=ContentMode(data.get("contentMode", 0)),
-            lqi=data.get("LQI", 0),
-            rssi=data.get("RSSI", 0),
-            temperature=data.get("temperature", 0),
-            battery_mv=data.get("batteryMv", 0),
-            wakeup_reason=WakeupReason(data.get("wakeupReason", 0)),
-            capabilities=data.get("capabilities", 0),
-            rotate=Rotation(data.get("rotate", 0)),
-            lut=LUT(data.get("lut", 0)),
-            update_count=data.get("updatecount", 0),
+            hw_type=_as_int(data.get("hwType"), 0),
+            last_seen=_as_int(data.get("lastseen"), 0),
+            next_update=_as_int(data.get("nextupdate"), 0),
+            next_checkin=_as_int(data.get("nextcheckin"), 0),
+            pending=_as_int(data.get("pending"), 0),
+            content_mode=ContentMode(_as_int(data.get("contentMode"), 0)),
+            lqi=_as_int(data.get("LQI"), 0),
+            rssi=_as_int(data.get("RSSI"), 0),
+            temperature=_as_int(data.get("temperature"), 0),
+            battery_mv=_as_int(data.get("batteryMv"), 0),
+            wakeup_reason=WakeupReason(_as_int(data.get("wakeupReason"), 0)),
+            capabilities=_as_int(data.get("capabilities"), 0),
+            rotate=Rotation(_as_int(data.get("rotate"), 0)),
+            lut=LUT(_as_int(data.get("lut"), 0)),
+            update_count=_as_int(data.get("updatecount"), 0),
             is_external=bool(data.get("isexternal", False)),
             ap_ip=data.get("apip", ""),
-            channel=data.get("ch", 0),
-            firmware_version=data.get("ver", 0),
+            channel=_as_int(data.get("ch"), 0),
+            firmware_version=_as_int(data.get("ver"), 0),
             hash=data.get("hash", ""),
             modecfgjson=data.get("modecfgjson", ""),
             invert=bool(data.get("invert", False)),
-            update_last=data.get("updatelast", 0),
+            update_last=_as_int(data.get("updatelast"), 0),
             raw=dict(data),
         )
 
@@ -157,20 +182,20 @@ class APStatus:
     def from_dict(cls, data: dict[str, Any]) -> "APStatus":
         """Parse a sys-message dict from the AP WebSocket. Tolerant of missing keys."""
         return cls(
-            current_time=data.get("currtime", 0),
-            heap=data.get("heap", 0),
-            record_count=data.get("recordcount", 0),
-            ap_state=APState(data.get("apstate", 0)),
-            run_state=RunStatus(data.get("runstate", 0)),
-            rssi=data.get("rssi", 0),
+            current_time=_as_int(data.get("currtime"), 0),
+            heap=_as_int(data.get("heap"), 0),
+            record_count=_as_int(data.get("recordcount"), 0),
+            ap_state=APState(_as_int(data.get("apstate"), 0)),
+            run_state=RunStatus(_as_int(data.get("runstate"), 0)),
+            rssi=_as_int(data.get("rssi"), 0),
             wifi_ssid=data.get("wifissid", ""),
-            uptime=data.get("uptime", 0),
-            db_size=data.get("dbsize", 0),
-            little_fs_free=data.get("littlefsfree", 0),
-            ps_ram_free=data.get("psfree"),  # conditional on BOARD_HAS_PSRAM
-            wifi_status=data.get("wifistatus", 0),
-            low_battery_count=data.get("lowbattcount"),
-            timeout_count=data.get("timeoutcount"),
+            uptime=_as_int(data.get("uptime"), 0),
+            db_size=_as_int(data.get("dbsize"), 0),
+            little_fs_free=_as_int(data.get("littlefsfree"), 0),
+            ps_ram_free=_as_optional_int(data.get("psfree")),  # conditional on BOARD_HAS_PSRAM
+            wifi_status=_as_int(data.get("wifistatus"), 0),
+            low_battery_count=_as_optional_int(data.get("lowbattcount")),
+            timeout_count=_as_optional_int(data.get("timeoutcount")),
             raw=dict(data),
         )
 
@@ -203,8 +228,8 @@ class APInfo:
             build_version=data.get("buildversion", ""),
             build_time=data.get("buildtime", ""),
             ap_version=str(data.get("ap_version", "")),
-            psram_size=data.get("psramsize", 0),
-            flash_size=data.get("flashsize", 0),
+            psram_size=_as_int(data.get("psramsize"), 0),
+            flash_size=_as_int(data.get("flashsize"), 0),
             has_c6=bool(data.get("hasC6", False)),
             has_h2=bool(data.get("hasH2", False)),
             can_rollback=bool(data.get("rollback", False)),
@@ -343,20 +368,20 @@ class APConfig:
 
         return cls(
             alias=data.get("alias", ""),
-            channel=data.get("channel", 0),
-            subghz_channel=data.get("subghzchannel", 0),
-            led_brightness=data.get("led", 0),
-            tft_brightness=data.get("tft", 0),
-            language=data.get("language", 0),
-            max_sleep=data.get("maxsleep", 0),
-            stop_sleep=data.get("stopsleep", 0),
+            channel=_as_int(data.get("channel"), 0),
+            subghz_channel=_as_int(data.get("subghzchannel"), 0),
+            led_brightness=_as_int(data.get("led"), 0),
+            tft_brightness=_as_int(data.get("tft"), 0),
+            language=_as_int(data.get("language"), 0),
+            max_sleep=_as_int(data.get("maxsleep"), 0),
+            stop_sleep=_as_int(data.get("stopsleep"), 0),
             timezone=data.get("timezone", ""),
             preview=bool(data.get("preview", False)),
             nightly_reboot=bool(data.get("nightlyreboot", False)),
             lock=bool(data.get("lock", False)),
-            wifi_power=data.get("wifipower", 0),
-            sleep_time1=data.get("sleeptime1", 0),
-            sleep_time2=data.get("sleeptime2", 0),
+            wifi_power=_as_int(data.get("wifipower"), 0),
+            sleep_time1=_as_int(data.get("sleeptime1"), 0),
+            sleep_time2=_as_int(data.get("sleeptime2"), 0),
             ble_enabled=bool(data.get("ble", False)),
             repo=data.get("repo", ""),
             env=data.get("env", ""),
@@ -416,8 +441,8 @@ class APListItem:
         return cls(
             ip=data.get("ip", ""),
             alias=data.get("alias", ""),
-            count=data.get("count", 0),
-            channel=data.get("channel", 0),
+            count=_as_int(data.get("count"), 0),
+            channel=_as_int(data.get("channel"), 0),
             version=str(data.get("version", "")),
             raw=dict(data),
         )
@@ -442,8 +467,8 @@ class UploadProgress:
         """Parse an 'upload' WS message dict. Tolerant of missing keys."""
         return cls(
             src=data.get("src", ""),
-            current=data.get("current", 0),
-            total=data.get("total", 0),
+            current=_as_int(data.get("current"), 0),
+            total=_as_int(data.get("total"), 0),
             raw=dict(data),
         )
 
@@ -481,14 +506,14 @@ class TagType:
     def from_dict(cls, type_id: int, data: dict[str, Any]) -> "TagType":
         return cls(
             type_id=type_id,
-            version=data.get("version", 1),
+            version=_as_int(data.get("version"), 1),
             name=data.get("name", f"Unknown Type {type_id}"),
             width=data["width"],
             height=data["height"],
-            rotatebuffer=data.get("rotatebuffer", 0),
-            bpp=data.get("bpp", 2),
+            rotatebuffer=_as_int(data.get("rotatebuffer"), 0),
+            bpp=_as_int(data.get("bpp"), 2),
             color_table=data.get("colortable", {"white": [255, 255, 255], "black": [0, 0, 0]}),
-            short_lut=data.get("shortlut", 2),
+            short_lut=_as_int(data.get("shortlut"), 2),
             options=data.get("options", []),
             content_ids=data.get("contentids", []),
             template=data.get("template", {}),
@@ -546,9 +571,9 @@ class WifiNetwork:
         """Parse a single entry of the ``networks`` array. Tolerant of missing keys."""
         return cls(
             ssid=data.get("ssid", ""),
-            channel=data.get("ch", 0),
-            rssi=data.get("rssi", 0),
-            encryption=data.get("enc", 0),
+            channel=_as_int(data.get("ch"), 0),
+            rssi=_as_int(data.get("rssi"), 0),
+            encryption=_as_int(data.get("enc"), 0),
             raw=dict(data),
         )
 
@@ -574,7 +599,7 @@ class SSIDList:
     def from_dict(cls, data: dict[str, Any]) -> "SSIDList":
         """Parse a ``/get_ssid_list`` dict. Tolerant of missing keys."""
         return cls(
-            scan_status=data.get("scanstatus", 0),
+            scan_status=_as_int(data.get("scanstatus"), 0),
             networks=[WifiNetwork.from_dict(n) for n in data.get("networks", [])],
             raw=dict(data),
         )

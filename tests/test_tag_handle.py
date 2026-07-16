@@ -371,12 +371,30 @@ async def test_get_image_no_tag_record_returns_none(client):
 
 @pytest.mark.asyncio
 async def test_get_image_unknown_tag_type_raises(client, tag_dict):
+    """An image *is* stored, but the tag type is unknown -- decoding is genuinely impossible."""
     tag = dict(tag_dict, hwType=99)
     with aioresponses() as m:
         m.get(f"{BASE}/get_db?mac=AABBCCDDEEFF", payload={"tags": [tag]})
+        m.get(f"{BASE}/current/AABBCCDDEEFF.raw", status=200, body=b"\x00\x01")
         m.get(f"{BASE}/tagtypes/63.json", status=404)
         with pytest.raises(ValueError):
             await client.get_image("AABBCCDDEEFF")
+
+
+@pytest.mark.asyncio
+async def test_get_image_no_image_and_unknown_tag_type_returns_none(client, tag_dict):
+    """Image-existence is checked *before* tag type: no stored image -> None, even if the
+    tag type is also unrecognized. There's nothing to decode either way, and "no image" is
+    the more specific answer (see docs/followups.md item 4)."""
+    tag = dict(tag_dict, hwType=99)
+    with aioresponses() as m:
+        m.get(f"{BASE}/get_db?mac=AABBCCDDEEFF", payload={"tags": [tag]})
+        m.get(f"{BASE}/current/AABBCCDDEEFF.raw", status=404)
+        img = await client.get_image("AABBCCDDEEFF")
+
+    assert img is None
+    # Must not even attempt the tag type lookup once "no image" is already decided.
+    assert ("GET", aiohttp.client.URL(f"{BASE}/tagtypes/63.json")) not in m.requests
 
 
 @pytest.mark.asyncio
@@ -592,6 +610,22 @@ async def test_wait_for_checkin_timeout_raises_and_unsubscribes(client):
 
 
 @pytest.mark.asyncio
+async def test_wait_for_checkin_cancellation_unsubscribes(client):
+    """Cancelling the caller's task (e.g. an outer asyncio.wait_for / task group) must not
+    leak the temporary on_tag_update subscription -- the try/finally must run on
+    CancelledError just like it does on the timeout/success paths."""
+    task = asyncio.create_task(client.wait_for_checkin("AABBCCDDEEFF", timeout=10.0))
+    await asyncio.sleep(0.01)  # let it subscribe and start waiting
+    assert len(client._tag_update_cbs) == 1
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert len(client._tag_update_cbs) == 0
+
+
+@pytest.mark.asyncio
 async def test_tag_handle_wait_for_checkin_delegates(client, real_tag_dict):
     handler = _WebSocketHandler(client, reconnect_interval=30.0)
     mac = real_tag_dict["mac"]
@@ -685,6 +719,31 @@ async def test_upload_image_wait_true_timeout_raises(client):
             await client.upload_image(mac, b"\xff\xd8\xff" + b"\x00" * 10, wait=True, wait_timeout=0.05)
 
     assert len(client._tag_update_cbs) == 0
+
+
+@pytest.mark.asyncio
+async def test_upload_image_wait_true_no_cache_baseline_logs_warning(client, tag_dict, caplog):
+    """When the tag isn't cached at upload time, pre_hash is None and the render-complete
+    check degrades to just 'pending == 0' -- this must be observable via a WARNING log
+    (docs/followups.md item 3)."""
+    client._set_connected(True)
+    mac = "AABBCCDDEEFF"  # not seeded into client._tags
+
+    handler = _WebSocketHandler(client, reconnect_interval=30.0)
+
+    async def feed():
+        await asyncio.sleep(0.01)
+        done = dict(tag_dict, mac=mac, hash="whatever", pending=0)
+        await handler._handle_message(json.dumps({"tags": [done]}))
+
+    task = asyncio.create_task(feed())
+
+    with aioresponses() as m, caplog.at_level(logging.WARNING):
+        m.post(f"{BASE}/imgupload", status=200, body=b"")
+        await client.upload_image(mac, b"\xff\xd8\xff" + b"\x00" * 10, wait=True, wait_timeout=2.0)
+
+    await task
+    assert any("no cached hash baseline" in rec.message for rec in caplog.records)
 
 
 @pytest.mark.asyncio

@@ -20,7 +20,13 @@ class OEPLNotFoundError(OEPLError):
 
 
 class OEPLResponseError(OEPLError):
-    """Raised when the AP returns a non-200 HTTP status."""
+    """Raised when the AP reports a request failure.
+
+    Covers both a non-200 HTTP status, and the AP's alternate failure mode
+    of HTTP 200 with a body that (once stripped) starts with "Error"/"error"
+    — some firmware handlers (e.g. ``/save_cfg`` with an unknown MAC) report
+    failures this way instead of via the HTTP status code.
+    """
 
     def __init__(self, status: int, body: str) -> None:
         self.status = status
