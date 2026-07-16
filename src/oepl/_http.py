@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any, Callable, cast
+from urllib.parse import quote
 from uuid import uuid4
 
 import aiohttp
@@ -21,17 +22,36 @@ _MAX_UPLOAD_RETRIES = 3
 _UPLOAD_BACKOFF = 2  # seconds; doubles on each retry
 
 
-def _raise_if_error_body(status: int, body: str) -> None:
+def quote_query_value(value: str) -> str:
+    """URL-encode a value for interpolation into a query string.
+
+    Applied uniformly to every query-string value this library builds by hand
+    (``f"edit?list={...}"``-style interpolation, not ``aiohttp``'s own
+    ``params=``). Most values (MACs, hex hashes) are already URL-safe, but
+    ``files.*`` deals with arbitrary filesystem paths, so a name containing a
+    space, ``&``, ``#``, or ``?`` would otherwise corrupt the query string.
+    Uses ``quote``'s default ``safe="/"``: these values are themselves
+    filesystem-style paths (``files.list``/``download``/``check`` always
+    prepend a leading ``/``), and ``/`` needs no escaping inside a query
+    string component, so leaving it unescaped keeps URLs readable without
+    changing the AP's parsed result (ESPAsyncWebServer URL-decodes params).
+    """
+    return quote(value)
+
+
+def _raise_if_error_body(body: str) -> None:
     """Raise OEPLResponseError if an HTTP-200 body is actually an AP-reported error.
 
     The AP firmware reports some failures as ``200`` with an error string body
     (e.g. ``/save_cfg`` with an unknown MAC returns ``200 "Error while saving:
     mac not found"``). Any body that, once stripped, starts with "Error" or
-    "error" is treated as a failure even though the HTTP status was 200.
+    "error" is treated as a failure even though the HTTP status was 200. Only
+    ever called after the 200 gate in :meth:`_HTTPClient._request`, so the
+    status is always 200 — no need to thread it through as a parameter.
     """
     stripped = body.strip()
     if stripped.startswith("Error") or stripped.startswith("error"):
-        raise OEPLResponseError(status, body)
+        raise OEPLResponseError(200, body)
 
 
 class _HTTPClient:
@@ -79,7 +99,7 @@ class _HTTPClient:
     async def get_text(self, path: str) -> str:
         resp = await self._request("GET", path)
         body = await resp.text()
-        _raise_if_error_body(resp.status, body)
+        _raise_if_error_body(body)
         return body
 
     async def get_raw(self, path: str) -> bytes | None:
@@ -90,6 +110,15 @@ class _HTTPClient:
         except OEPLNotFoundError:
             return None
 
+    async def get_bytes(self, path: str) -> bytes:
+        """Return raw response bytes. Raises OEPLNotFoundError on 404 (unlike :meth:`get_raw`).
+
+        For endpoints where a 404 is a genuine failure rather than an
+        expected "not found yet" outcome (e.g. ``/backup_db``).
+        """
+        resp = await self._request("GET", path)
+        return await resp.read()
+
     async def post_form(
         self,
         path: str,
@@ -99,20 +128,20 @@ class _HTTPClient:
     ) -> str:
         resp = await self._request("POST", path, data=data, timeout=timeout or _DEFAULT_TIMEOUT)
         body = await resp.text()
-        _raise_if_error_body(resp.status, body)
+        _raise_if_error_body(body)
         return body
 
     async def delete_form(self, path: str, data: dict[str, Any]) -> str:
         """DELETE with a form-encoded body (SPIFFSEditor's ``/edit`` delete)."""
         resp = await self._request("DELETE", path, data=data)
         body = await resp.text()
-        _raise_if_error_body(resp.status, body)
+        _raise_if_error_body(body)
         return body
 
     async def post_json(self, path: str, payload: dict[str, Any]) -> str:
         resp = await self._request("POST", path, json=payload)
         body = await resp.text()
-        _raise_if_error_body(resp.status, body)
+        _raise_if_error_body(body)
         return body
 
     async def get_json_any(self, path: str) -> Any:
@@ -123,7 +152,7 @@ class _HTTPClient:
         resp = await self._request("GET", path)
         return await resp.json(content_type=None)
 
-    async def post_multipart(self, path: str, fields: dict[str, Any]) -> None:
+    async def post_multipart(self, path: str, fields: dict[str, Any], *, check_body: bool = False) -> None:
         """POST multipart/form-data; retries up to 3x on timeout with exponential backoff.
 
         Builds the body by hand instead of using ``aiohttp.FormData``. The AP's
@@ -136,6 +165,15 @@ class _HTTPClient:
         file parts (tuple values) carry a Content-Type. Callers must order
         *fields* with text fields first and file fields last, since the AP parses
         params before the file part completes.
+
+        Args:
+            check_body: When ``True``, apply the same "200 + Error... body is
+                actually a failure" heuristic used by :meth:`post_form`/
+                :meth:`get_text` (see :func:`_raise_if_error_body`). Defaults
+                to ``False`` since ``/imgupload`` returns an empty body on
+                success and would need no check at all; callers whose
+                endpoint can return a 200-with-error-text body (e.g.
+                ``/restore_db``, ``/littlefs_put``) should opt in.
         """
         boundary = uuid4().hex
         body = self._encode_multipart(fields, boundary)
@@ -144,7 +182,9 @@ class _HTTPClient:
         backoff = _UPLOAD_BACKOFF
         for attempt in range(1, _MAX_UPLOAD_RETRIES + 1):
             try:
-                await self._request("POST", path, data=body, headers=headers, timeout=_UPLOAD_TIMEOUT)
+                resp = await self._request("POST", path, data=body, headers=headers, timeout=_UPLOAD_TIMEOUT)
+                if check_body:
+                    _raise_if_error_body(await resp.text())
                 return
             except OEPLTimeoutError:
                 if attempt >= _MAX_UPLOAD_RETRIES:

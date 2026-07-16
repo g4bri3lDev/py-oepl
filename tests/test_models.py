@@ -31,6 +31,17 @@ def test_tag_from_dict(tag_dict):
     assert tag.firmware_version == 1337
 
 
+def test_tag_from_dict_malformed_int_falls_back_to_default(tag_dict):
+    """A present-but-malformed value (e.g. a firmware bug) must fall back to the typed
+    default rather than being stored as-is and raising later inside last_seen_at."""
+    tag_dict["lastseen"] = "x"
+    tag = Tag.from_dict(tag_dict)
+    assert tag.last_seen == 0
+    assert tag.last_seen_at is None
+    # The raw value is preserved verbatim for diagnostics.
+    assert tag.raw["lastseen"] == "x"
+
+
 def test_tag_capabilities_list(tag_dict):
     tag_dict["capabilities"] = 0x0043  # LED | Compression | NFC
     tag = Tag.from_dict(tag_dict)
@@ -114,6 +125,19 @@ def test_apstatus_no_psram():
         "timeoutcount": 0,
     }
     assert APStatus.from_dict(sys_msg).ps_ram_free is None
+
+
+def test_apstatus_malformed_int_fields_fall_back_to_defaults():
+    """Present-but-malformed values must not raise; they fall back like missing keys."""
+    sys_msg = {
+        "currtime": "not-a-number",
+        "heap": None,
+        "psfree": "also-not-a-number",
+    }
+    status = APStatus.from_dict(sys_msg)
+    assert status.current_time == 0
+    assert status.heap == 0
+    assert status.ps_ram_free is None
 
 
 def test_apstatus_missing_lowbatt_timeout_counts():
