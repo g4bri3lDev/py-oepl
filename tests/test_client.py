@@ -752,6 +752,26 @@ async def test_restore_db_multipart_contains_file_part(client):
 
 
 @pytest.mark.asyncio
+async def test_restore_db_raises_on_200_error_body(client):
+    """restore_db opts into post_multipart's check_body=True: unlike imgupload, /restore_db
+    can return a 200 carrying an AP-reported error string, which must not be swallowed."""
+    payload = b'{"tags":[]}'
+    with aioresponses() as m:
+        m.post(f"{BASE}/restore_db", status=200, body="Error: bad backup file")
+        with pytest.raises(OEPLResponseError):
+            await client.restore_db(payload)
+
+
+@pytest.mark.asyncio
+async def test_upload_image_empty_body_still_succeeds(client):
+    """imgupload does NOT opt into check_body -- its empty-body success response must not
+    be mistaken for an error (post_multipart's check_body defaults to False)."""
+    with aioresponses() as m:
+        m.post(f"{BASE}/imgupload", status=200, body=b"")
+        await client.upload_image("AABBCCDDEEFF", b"\xff\xd8\xff" + b"\x00" * 10)
+
+
+@pytest.mark.asyncio
 async def test_set_time_no_arg_posts_current_epoch(client, monkeypatch):
     monkeypatch.setattr("oepl.client.time.time", lambda: 1750000000.0)
     with aioresponses() as m:

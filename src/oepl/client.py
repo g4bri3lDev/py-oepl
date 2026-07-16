@@ -12,7 +12,7 @@ from typing import Any, Callable
 import aiohttp
 from PIL import Image
 
-from ._http import _HTTPClient
+from ._http import _HTTPClient, quote_query_value
 from .enums import LUT, ContentMode, Rotation, TagCommand
 from .exceptions import OEPLConnectionError, OEPLTimeoutError
 from .files import Files
@@ -274,7 +274,7 @@ class OEPLClient:
         record for this MAC (``/get_db?mac=...`` responds with an empty
         ``tags`` list rather than 404).
         """
-        data = await self._http.get_json(f"get_db?mac={mac.upper()}")
+        data = await self._http.get_json(f"get_db?mac={quote_query_value(mac.upper())}")
         tags = data.get("tags", [])
         if not tags:
             return None
@@ -350,8 +350,10 @@ class OEPLClient:
                 the firmware defaults to ``1`` (Burkes).
             ttl: Tag sleep interval in seconds. Converted to minutes internally.
                 ``0`` → AP uses the tag's default sleep interval.
-            content_mode: Tag content mode to assign (default ``24`` = static
-                image; ``25`` = external/Home-Assistant-managed image).
+            content_mode: Tag content mode to assign (default ``24`` =
+                ``ContentMode.EXTERNAL_IMAGE``, an AP-managed static image;
+                ``25`` = ``ContentMode.HOME_ASSISTANT``, an
+                externally/Home-Assistant-managed image).
             rotate: Image rotation applied server-side. Omitted (and left
                 unchanged on the tag) unless explicitly passed.
             lut: Display refresh LUT mode. Omitted (and left unchanged on the
@@ -539,7 +541,9 @@ class OEPLClient:
     async def set_led(self, mac: str, pattern: LEDPattern) -> None:
         """Flash an LED pattern on a tag."""
         encoded = pattern.encode()
-        await self._http.get_text(f"led_flash?mac={mac.upper()}&pattern={encoded}")
+        await self._http.get_text(
+            f"led_flash?mac={quote_query_value(mac.upper())}&pattern={quote_query_value(encoded)}"
+        )
 
     async def get_tag_type(self, hw_type: int, *, use_cache: bool = True) -> TagType | None:
         """Fetch the tag type definition for a given hw_type from the AP.
@@ -578,19 +582,27 @@ class OEPLClient:
         it; tag type lookups go through :meth:`get_tag_type`'s cache.
 
         Returns ``None`` if the AP has no record for *mac*, or no image stored
-        for it yet (404 on ``current/<mac>.raw``).
+        for it yet (404 on ``current/<mac>.raw``) — checked *before* the tag
+        type lookup below, so a tag with both an unrecognized ``hw_type`` and
+        no stored image still returns ``None`` rather than raising: there's
+        nothing to decode either way, and "no image" is the more specific,
+        more useful answer.
 
         Raises:
-            ValueError: If the tag is known but the AP has no tag type
-                definition for its ``hw_type`` — decoding requires the type's
-                geometry (width/height/bpp/color table) and can't proceed
-                without it.
+            ValueError: If an image *is* stored for *mac* but the AP has no
+                tag type definition for its ``hw_type`` — decoding requires
+                the type's geometry (width/height/bpp/color table) and can't
+                proceed without it.
         """
         mac_upper = mac.upper()
         tag = self._tags.get(mac_upper)
         if tag is None:
             tag = await self.get_tag(mac_upper)
         if tag is None:
+            return None
+
+        raw = await self.get_image_raw(mac_upper)
+        if raw is None:
             return None
 
         tag_type = await self.get_tag_type(tag.hw_type)
@@ -600,9 +612,6 @@ class OEPLClient:
                 "cannot decode image without tag geometry."
             )
 
-        raw = await self.get_image_raw(mac_upper)
-        if raw is None:
-            return None
         return decode_image_pil(raw, tag_type)
 
     async def wait_for_checkin(self, mac: str, *, timeout: float = 90.0) -> Tag:
@@ -642,6 +651,16 @@ class OEPLClient:
         transfer in progress, but firmware clears ``pending`` only once the
         tag has actually redrawn with the new content.
         """
+        if pre_hash is None:
+            _LOGGER.warning(
+                "upload_image(wait=True): no cached hash baseline for %s (tag wasn't in the "
+                "local cache at upload time); the render-complete check is weakened to just "
+                "'pending == 0', which can resolve on an unrelated pending transition rather "
+                "than the actual new render. Call get_tag(%s) first to warm the cache and "
+                "restore the full 'hash changed AND pending == 0' guarantee.",
+                mac,
+                mac,
+            )
         loop = asyncio.get_running_loop()
         future: asyncio.Future[None] = loop.create_future()
 
@@ -703,9 +722,9 @@ class OEPLClient:
         returns a plain-text 400 (not 404) if *mac* is missing/malformed or
         unknown to the AP entirely; that surfaces as ``OEPLResponseError``.
         """
-        path = f"getdata?mac={mac.upper()}"
+        path = f"getdata?mac={quote_query_value(mac.upper())}"
         if md5 is not None:
-            path += f"&md5={md5}"
+            path += f"&md5={quote_query_value(md5)}"
         return await self._http.get_raw(path)
 
     # ------------------------------------------------------------------
@@ -913,8 +932,7 @@ class OEPLClient:
         Raises:
             OEPLNotFoundError: If the AP responds 404.
         """
-        resp = await self._http._request("GET", "backup_db")
-        return await resp.read()
+        return await self._http.get_bytes("backup_db")
 
     async def restore_db(self, data: bytes) -> None:
         """Replace the AP's tag database from a previously downloaded backup.
@@ -923,9 +941,14 @@ class OEPLClient:
         (``dotagDBUpload``, web.cpp:1062-1078) under the ``file`` field name
         (matching the AP's own web UI). The AP destroys its current tag
         database and reloads it from the uploaded content immediately —
-        **this is destructive and cannot be undone.**
+        **this is destructive and cannot be undone.** ``check_body=True`` so a
+        200 response carrying an AP-reported error body (malformed backup,
+        etc.) still surfaces as :class:`~oepl.exceptions.OEPLResponseError`
+        instead of being swallowed as a silent success.
         """
-        await self._http.post_multipart("restore_db", {"file": ("tagDB.json", data, "application/json")})
+        await self._http.post_multipart(
+            "restore_db", {"file": ("tagDB.json", data, "application/json")}, check_body=True
+        )
 
     # ------------------------------------------------------------------
     # OTA / firmware update — ALL of these flash firmware and/or reboot the

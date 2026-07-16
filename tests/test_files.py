@@ -114,6 +114,45 @@ async def test_download_404_returns_none(client):
     assert result is None
 
 
+@pytest.mark.asyncio
+async def test_download_filename_with_space_is_url_encoded(client):
+    """A raw space in the query string would corrupt it -- must be percent-encoded.
+
+    aioresponses only matches the mock below (registered against the percent-encoded
+    path) if the client actually sent an encoded request; an unencoded "my file.bin"
+    would fail to match and raise a connection error instead.
+    """
+    with aioresponses() as m:
+        m.get(f"{BASE}/edit?download=my%20file.bin", status=200, body=b"data")
+        result = await client.files.download("my file.bin")
+    assert result == b"data"
+
+
+@pytest.mark.asyncio
+async def test_list_dir_with_ampersand_is_url_encoded(client):
+    """A raw '&' would be parsed as a query-param separator -- must be percent-encoded.
+
+    See test_download_filename_with_space_is_url_encoded for why matching the mock
+    at all is the assertion here.
+    """
+    with aioresponses() as m:
+        m.get(f"{BASE}/edit?list=/foo%26bar", status=200, body=b"[]", content_type="application/json")
+        result = await client.files.list("/foo&bar")
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_check_path_with_space_is_url_encoded(client):
+    with aioresponses() as m:
+        m.get(
+            f"{BASE}/check_file?path=/my%20file.bin",
+            status=200,
+            payload={"filesize": 1, "md5": "abcd"},
+        )
+        result = await client.files.check("/my file.bin")
+    assert result == {"filesize": 1, "md5": "abcd"}
+
+
 # ---------------------------------------------------------------------
 # upload()
 # ---------------------------------------------------------------------
@@ -135,6 +174,18 @@ async def test_upload_posts_littlefs_put_with_path_and_file(client):
     text_fields, file_parts = _parse_multipart(body, content_type)
     assert text_fields["path"] == b"/www/foo.bin"
     assert file_parts["data"] == b"\xde\xad\xbe\xef"
+
+
+@pytest.mark.asyncio
+async def test_upload_raises_on_200_error_body(client):
+    """upload() opts into post_multipart's check_body=True: /littlefs_put can return a 200
+    body reporting a write failure (e.g. disk full), which must not be swallowed."""
+    from oepl.exceptions import OEPLResponseError
+
+    with aioresponses() as m:
+        m.post(f"{BASE}/littlefs_put", status=200, body="Error. Disk full?")
+        with pytest.raises(OEPLResponseError):
+            await client.files.upload("/www/foo.bin", b"\xde\xad\xbe\xef")
 
 
 @pytest.mark.asyncio

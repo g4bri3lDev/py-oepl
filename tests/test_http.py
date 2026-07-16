@@ -81,6 +81,39 @@ async def test_get_raw_no_body_check(http_client):
 
 
 @pytest.mark.asyncio
+async def test_get_bytes_returns_body(http_client):
+    with aioresponses() as m:
+        m.get(f"{BASE}/backup_db", status=200, body=b'{"tags":[]}')
+        result = await http_client.get_bytes("backup_db")
+    assert result == b'{"tags":[]}'
+
+
+@pytest.mark.asyncio
+async def test_get_bytes_raises_not_found_on_404(http_client):
+    with aioresponses() as m:
+        m.get(f"{BASE}/backup_db", status=404)
+        with pytest.raises(OEPLNotFoundError):
+            await http_client.get_bytes("backup_db")
+
+
+@pytest.mark.asyncio
+async def test_post_multipart_check_body_raises_on_error_body(http_client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/restore_db", status=200, body="Error: bad file")
+        with pytest.raises(OEPLResponseError):
+            await http_client.post_multipart("restore_db", {"file": ("x", b"y", "text/plain")}, check_body=True)
+
+
+@pytest.mark.asyncio
+async def test_post_multipart_check_body_false_ignores_error_looking_body(http_client):
+    """Default check_body=False -- needed for /imgupload's empty-body success case, but also
+    means a body that merely starts with 'Error' is not checked unless opted in."""
+    with aioresponses() as m:
+        m.post(f"{BASE}/imgupload", status=200, body="Error-looking but not opted into checking")
+        await http_client.post_multipart("imgupload", {"mac": "DEADBEEF"})
+
+
+@pytest.mark.asyncio
 async def test_404_releases_response(http_client):
     with aioresponses() as m:
         m.get(f"{BASE}/missing", status=404)
