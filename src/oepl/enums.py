@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from enum import Enum, IntEnum
+from enum import Enum, IntEnum, IntFlag
 
 
 class OEPLIntEnum(IntEnum):
@@ -88,6 +88,37 @@ class LUT(OEPLIntEnum):
     FAST_NO_REDS = 2  # fast (no reds)
     FAST = 3  # fastest (ghosting)
     OTA = 0x10
+
+
+class TagCapability(IntFlag):
+    """Hardware capability bits a tag reports in ``Tag.capabilities``.
+
+    Values match the firmware's ``CAPABILITY_*`` constants
+    (``OpenEpaperLink/oepl-definitions.h``).
+
+    **These are detected at runtime, not declared.** The tag probes its own
+    hardware at boot and updates the flags — the wiki describes this for NFC
+    wake, where it "takes some measurements on the FD line". Anything not
+    electrically detectable therefore never appears here:
+
+    ``WAKE_BUTTON`` in particular is **not populated by tag firmware** in
+    practice. Across a fleet of real tags it was set on none, including tags
+    whose hardware definitely has buttons. Use :attr:`TagType.has_button`
+    instead, which comes from the static per-hardware tag type definition.
+
+    The two sources are complementary rather than redundant: buttons are only
+    described by the tag type, NFC only by these flags, and LED by both.
+    """
+
+    LED = 0x0001
+    COMPRESSION = 0x0002
+    CUSTOM_LUTS = 0x0004
+    ALT_LUT_SIZE = 0x0008
+    EXT_POWER = 0x0010
+    WAKE_BUTTON = 0x0020
+    NFC = 0x0040
+    NFC_WAKE = 0x0080
+    BLE = 0x0100
 
 
 class TagCommand(str, Enum):
