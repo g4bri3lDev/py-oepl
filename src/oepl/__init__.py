@@ -1,6 +1,6 @@
 """oepl — async Python client for the OpenEPaperLink AP."""
 
-__version__ = "0.2.2"  # x-release-please-version
+__version__ = "0.3.0"  # x-release-please-version
 from .client import OEPLClient
 from .enums import LUT, APState, ContentMode, Rotation, RunStatus, TagCommand, WakeupReason
 from .exceptions import (
