@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.3](https://github.com/g4bri3lDev/py-oepl/compare/v0.2.2...v0.2.3) (2026-08-12)
+
+
+### Bug Fixes
+
+* keep __version__ in sync with releases ([#6](https://github.com/g4bri3lDev/py-oepl/issues/6)) ([459b98c](https://github.com/g4bri3lDev/py-oepl/commit/459b98c3fc96a1c12d23326b646201439e3bdecc))
+* keep plain v* release tags in manifest mode ([#8](https://github.com/g4bri3lDev/py-oepl/issues/8)) ([7af5923](https://github.com/g4bri3lDev/py-oepl/commit/7af5923761c013c95843bb0be9b16bc4971bcc41))
+
 ## [0.2.2](https://github.com/g4bri3lDev/py-oepl/compare/v0.2.1...v0.2.2) (2026-08-12)
 
 
