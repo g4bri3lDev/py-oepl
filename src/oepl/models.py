@@ -6,7 +6,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, ClassVar
 
-from .enums import LUT, APState, ContentMode, Rotation, RunStatus, WakeupReason
+from .enums import (
+    LUT,
+    APState,
+    ContentMode,
+    Rotation,
+    RunStatus,
+    TagCapability,
+    WakeupReason,
+)
 
 
 def _epoch_to_datetime(epoch: int) -> datetime | None:
@@ -94,8 +102,23 @@ class Tag:
 
     @property
     def capabilities_list(self) -> list[str]:
-        """Names of all active capability bits."""
+        """Human-readable names of all active capability bits.
+
+        Intended for display. Use :attr:`capability_flags` to test for a
+        specific capability rather than matching on these strings.
+        """
         return [name for bit, name in self._CAPABILITIES if self.capabilities & bit]
+
+    @property
+    def capability_flags(self) -> TagCapability:
+        """Active capability bits as a :class:`TagCapability` flag set.
+
+        Note these are detected by the tag at boot, so they describe what the
+        hardware was found to support — not what its tag type declares. In
+        particular ``TagCapability.WAKE_BUTTON`` is not populated in practice;
+        see :attr:`TagType.has_button`.
+        """
+        return TagCapability(self.capabilities & 0x01FF)
 
     @property
     def last_seen_at(self) -> datetime | None:
@@ -501,6 +524,30 @@ class TagType:
     use_template: Any = None
     zlib_compression: Any = None
     raw: dict[str, Any] = field(repr=False, default_factory=dict)
+
+    @property
+    def has_button(self) -> bool:
+        """Whether this hardware has one or more buttons.
+
+        Comes from the tag type's ``options`` list, which is the only reliable
+        source: ``TagCapability.WAKE_BUTTON`` is not populated by tag firmware.
+
+        The **number** of buttons is not declared anywhere. Real hardware has
+        one or two (the 4.2" TG-GR42 has two, the M3 4.2" BWRY has one) and the
+        firmware defines wake reasons ``BUTTON1`` and ``BUTTON2``, but
+        ``options`` carries only a single ``"button"`` token. Callers that map
+        buttons to something user-visible should assume both may occur.
+        """
+        return "button" in self.options
+
+    @property
+    def has_led(self) -> bool:
+        """Whether this hardware has an LED, per the tag type's ``options``.
+
+        A tag may also report :attr:`TagCapability.LED` at runtime, and the two
+        occasionally disagree; treat either as evidence of an LED.
+        """
+        return "led" in self.options
 
     @classmethod
     def from_dict(cls, type_id: int, data: dict[str, Any]) -> "TagType":

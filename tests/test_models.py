@@ -2,7 +2,15 @@
 
 import pytest
 
-from oepl.enums import LUT, APState, ContentMode, Rotation, RunStatus, WakeupReason
+from oepl.enums import (
+    LUT,
+    APState,
+    ContentMode,
+    Rotation,
+    RunStatus,
+    TagCapability,
+    WakeupReason,
+)
 from oepl.models import APConfig, APInfo, APStatus, Tag, TagType
 
 
@@ -46,6 +54,52 @@ def test_tag_capabilities_list(tag_dict):
     tag_dict["capabilities"] = 0x0043  # LED | Compression | NFC
     tag = Tag.from_dict(tag_dict)
     assert tag.capabilities_list == ["LED", "Compression", "NFC"]
+
+
+def test_tag_capability_flags_match_firmware(tag_dict):
+    """Bit values must match the firmware's CAPABILITY_* constants."""
+    assert TagCapability.LED == 0x01
+    assert TagCapability.COMPRESSION == 0x02
+    assert TagCapability.CUSTOM_LUTS == 0x04
+    assert TagCapability.ALT_LUT_SIZE == 0x08
+    assert TagCapability.EXT_POWER == 0x10
+    assert TagCapability.WAKE_BUTTON == 0x20
+    assert TagCapability.NFC == 0x40
+    assert TagCapability.NFC_WAKE == 0x80
+    assert TagCapability.BLE == 0x0100
+
+    tag_dict["capabilities"] = 0x00C3  # LED | Compression | NFC | NFC_WAKE
+    flags = Tag.from_dict(tag_dict).capability_flags
+    assert TagCapability.NFC in flags
+    assert TagCapability.NFC_WAKE in flags
+    assert TagCapability.LED in flags
+    assert TagCapability.WAKE_BUTTON not in flags
+
+
+def test_tag_capability_flags_ignores_unknown_bits(tag_dict):
+    """Unknown high bits must not break flag construction."""
+    tag_dict["capabilities"] = 0xF001
+    assert Tag.from_dict(tag_dict).capability_flags is TagCapability.LED
+
+
+def test_tagtype_option_helpers():
+    """Buttons and LEDs are declared by the tag type's options list."""
+    base = {"width": 296, "height": 128}
+
+    both = TagType.from_dict(0x33, {**base, "options": ["button", "led"]})
+    assert both.has_button
+    assert both.has_led
+
+    button_only = TagType.from_dict(0x01, {**base, "options": ["button"]})
+    assert button_only.has_button
+    assert not button_only.has_led
+
+    none = TagType.from_dict(0xE0, {**base, "options": []})
+    assert not none.has_button
+    assert not none.has_led
+
+    # Missing "options" entirely must not raise.
+    assert not TagType.from_dict(0xE0, base).has_button
 
 
 def test_apconfig_labels(apconfig_dict):

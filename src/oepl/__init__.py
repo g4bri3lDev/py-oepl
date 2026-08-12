@@ -2,7 +2,16 @@
 
 __version__ = "0.2.3"  # x-release-please-version
 from .client import OEPLClient
-from .enums import LUT, APState, ContentMode, Rotation, RunStatus, TagCommand, WakeupReason
+from .enums import (
+    LUT,
+    APState,
+    ContentMode,
+    Rotation,
+    RunStatus,
+    TagCapability,
+    TagCommand,
+    WakeupReason,
+)
 from .exceptions import (
     OEPLConnectionError,
     OEPLError,
@@ -57,6 +66,7 @@ __all__ = [
     "RunStatus",
     "Rotation",
     "LUT",
+    "TagCapability",
     "TagCommand",
     "WakeupReason",
     "ContentMode",
