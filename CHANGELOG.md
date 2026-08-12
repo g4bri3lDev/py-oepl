@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.2.3...v0.3.0) (2026-08-12)
+
+
+### Features
+
+* add TagCapability flags and TagType.has_button/has_led ([#10](https://github.com/g4bri3lDev/py-oepl/issues/10)) ([9e3370c](https://github.com/g4bri3lDev/py-oepl/commit/9e3370cd4adc4832bc39ecad9f49258a4fe45d13))
+
 ## [0.2.3](https://github.com/g4bri3lDev/py-oepl/compare/v0.2.2...v0.2.3) (2026-08-12)
 
 
