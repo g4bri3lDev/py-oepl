@@ -32,11 +32,11 @@ cli = [
     "rich>=14.3.4",
 ]
 dither = [
-    "epaper-dithering>=0.6.4",
+    "epaper-dithering>=6.0.0,<7.0.0",
 ]
 all = [
     "rich>=14.3.4",
-    "epaper-dithering>=0.6.4",
+    "epaper-dithering>=6.0.0,<7.0.0",
 ]
 dev = [
     "pytest>=9.0",

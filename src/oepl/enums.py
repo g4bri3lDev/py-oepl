@@ -60,11 +60,31 @@ class Rotation(OEPLIntEnum):
 class LUT(OEPLIntEnum):
     """Display refresh LUT (look-up table) mode.
 
-    Values match firmware (``OpenEpaperLink/oepl-definitions.h``).
+    Member names mirror the firmware's ``EPD_LUT_*`` constants
+    (``OpenEpaperLink/oepl-definitions.h``), but **these values are stored on
+    the tag config and the AP reinterprets them** — so the names read
+    backwards from what they do. What the AP actually does with the stored
+    value (``contentmanager.cpp``, ``imageParams.lut`` selection):
+
+    ==========  =================================================================
+    Value       Behaviour
+    ==========  =================================================================
+    ``DEFAULT`` Adaptive. Cheap no-repeat refreshes, automatically promoted to
+                one full refresh per night to clear ghosting. **Best battery
+                life — this is the sensible default.**
+    ``NO_REPEAT`` Full refresh waveform on *every* update. Highest quality,
+                heaviest battery cost. Despite the name, this is the "always
+                full refresh" option (the AP web UI labels it exactly that).
+    ``FAST_NO_REDS`` Fast waveform, skipping red passes.
+    ``FAST``    Fastest waveform; may ghost.
+    ==========  =================================================================
+
+    Note a tag type whose ``shortlut`` is disabled always gets the full
+    waveform, making this setting a no-op for that hardware.
     """
 
-    DEFAULT = 0  # auto/default
-    NO_REPEAT = 1  # always full refresh
+    DEFAULT = 0  # adaptive: no-repeat, promoted to full once nightly
+    NO_REPEAT = 1  # always full refresh (despite the name)
     FAST_NO_REDS = 2  # fast (no reds)
     FAST = 3  # fastest (ghosting)
     OTA = 0x10
