@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/g4bri3lDev/py-oepl/compare/v0.2.1...v0.2.2) (2026-08-12)
+
+
+### Bug Fixes
+
+* support epaper-dithering 6.x and align with HA core ([#4](https://github.com/g4bri3lDev/py-oepl/issues/4)) ([d97a713](https://github.com/g4bri3lDev/py-oepl/commit/d97a713f7f5c04e20f67f84c2959fef21258b47f))
+
 ## [0.2.1](https://github.com/g4bri3lDev/py-oepl/compare/v0.2.0...v0.2.1) (2026-07-16)
 
 
