@@ -398,7 +398,7 @@ class OEPLClient:
                 _dm = dither_mode if dither_mode is not None else DitherMode.FLOYD_STEINBERG
                 _cs = color_scheme if color_scheme is not None else ColorScheme.BWR
                 if _dm != DitherMode.NONE:
-                    image = dither_image(image, _cs, _dm)
+                    image = dither_image(image, _cs, mode=_dm)
                     client_dithered = True
             buf = io.BytesIO()
             image.convert("RGB").save(buf, format="JPEG", quality=100, subsampling=0)
