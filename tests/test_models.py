@@ -478,3 +478,19 @@ def test_ssidlist_scanning_status():
 
     result = SSIDList.from_dict({"scanstatus": -1, "networks": []})
     assert result.scan_status == -1
+
+
+def test_apconfig_lock_is_tristate(apconfig_dict):
+    """Inventory lock has three states, so it cannot be a boolean.
+
+    The firmware distinguishes 1 (reject new tags) from 2 (accept only tags
+    that are booting); collapsing them would lose the learning mode.
+    """
+    for raw, expected in ((0, 0), (1, 1), (2, 2)):
+        assert APConfig.from_dict({**apconfig_dict, "lock": raw}).lock == expected
+
+
+def test_apconfig_lock_round_trips(apconfig_dict):
+    """Learning mode must survive being written back."""
+    config = APConfig.from_dict({**apconfig_dict, "lock": 2})
+    assert config.to_dict()["lock"] == 2

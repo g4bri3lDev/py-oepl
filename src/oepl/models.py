@@ -284,7 +284,10 @@ class APConfig:
     timezone: str = ""
     preview: bool = False
     nightly_reboot: bool = False
-    lock: bool = False
+    lock: int = 0
+    """Inventory lock: 0 accepts any tag, 1 rejects new tags, 2 accepts only
+    tags that are booting. Not a flag: the firmware distinguishes 1 from 2
+    (``newproto.cpp``), so a boolean would lose the learning mode."""
     wifi_power: int = 0
     sleep_time1: int = 0
     sleep_time2: int = 0
@@ -401,7 +404,7 @@ class APConfig:
             timezone=data.get("timezone", ""),
             preview=bool(data.get("preview", False)),
             nightly_reboot=bool(data.get("nightlyreboot", False)),
-            lock=bool(data.get("lock", False)),
+            lock=_as_int(data.get("lock"), 0),
             wifi_power=_as_int(data.get("wifipower"), 0),
             sleep_time1=_as_int(data.get("sleeptime1"), 0),
             sleep_time2=_as_int(data.get("sleeptime2"), 0),
