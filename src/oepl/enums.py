@@ -56,6 +56,15 @@ class Rotation(OEPLIntEnum):
     R180 = 2
     R270 = 3
 
+    @property
+    def degrees(self) -> int:
+        """Clockwise rotation in degrees.
+
+        The wire value is a quarter-turn count, which ``makeimage.cpp``
+        applies as a pixel transform per case.
+        """
+        return int(self) * 90
+
 
 class LUT(OEPLIntEnum):
     """Display refresh LUT (look-up table) mode.

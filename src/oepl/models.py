@@ -100,6 +100,30 @@ class Tag:
         (0x0100, "BLE"),
     ]
 
+    # A tag reports 1337 mV when it has no usable reading, and the firmware
+    # and the AP's own web interface both exclude it everywhere they touch
+    # battery values (tag_db.cpp, wwwroot/main.js).
+    NO_BATTERY_READING: ClassVar[frozenset[int]] = frozenset({0, 1337})
+
+    # Below this the firmware counts a tag towards lowbattcount.
+    LOW_BATTERY_MV: ClassVar[int] = 2400
+
+    # Many tags cannot measure above this and report it as a ceiling; the web
+    # interface renders it as "greater than or equal to 2.6 V".
+    BATTERY_CEILING_MV: ClassVar[int] = 2600
+
+    @property
+    def has_battery_reading(self) -> bool:
+        """Whether ``battery_mv`` is an actual measurement."""
+        return self.battery_mv not in self.NO_BATTERY_READING
+
+    @property
+    def battery_low(self) -> bool | None:
+        """Whether the firmware would count this tag as low on battery."""
+        if not self.has_battery_reading:
+            return None
+        return self.battery_mv < self.LOW_BATTERY_MV
+
     @property
     def capabilities_list(self) -> list[str]:
         """Human-readable names of all active capability bits.

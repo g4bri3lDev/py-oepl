@@ -528,3 +528,26 @@ def test_tagtype_accent_color():
     assert mono.accent_color is None
     assert bwr.accent_color == "red"
     assert bwy.accent_color == "yellow"
+
+
+def test_tag_battery_sentinels_are_not_measurements(tag_dict):
+    """1337 mV means the tag has no usable reading, not a flat battery.
+
+    The firmware and the Access Point's own web interface both exclude 0 and
+    1337 wherever they touch battery values.
+    """
+    for mv in (0, 1337):
+        tag = Tag.from_dict({**tag_dict, "batteryMv": mv})
+        assert not tag.has_battery_reading
+        assert tag.battery_low is None
+
+
+def test_tag_battery_low_matches_the_firmware_threshold(tag_dict):
+    """The firmware counts a tag as low below 2400 mV."""
+    assert Tag.from_dict({**tag_dict, "batteryMv": 2399}).battery_low is True
+    assert Tag.from_dict({**tag_dict, "batteryMv": 2400}).battery_low is False
+
+
+def test_rotation_degrees():
+    """The wire value is a quarter-turn count, not degrees."""
+    assert [r.degrees for r in Rotation] == [0, 90, 180, 270]
