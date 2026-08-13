@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.3.0...v0.4.0) (2026-08-13)
+
+
+### Features
+
+* expose protocol knowledge consumers were reinventing ([#12](https://github.com/g4bri3lDev/py-oepl/issues/12)) ([56a4eaf](https://github.com/g4bri3lDev/py-oepl/commit/56a4eaf794967639ef696cefdb34dd7330cbaa82))
+
 ## [0.3.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.2.3...v0.3.0) (2026-08-12)
 
 
