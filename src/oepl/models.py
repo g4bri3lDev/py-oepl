@@ -308,7 +308,47 @@ class APConfig:
     has_flasher: bool = False
     raw: dict[str, Any] = field(repr=False, default_factory=dict)
 
-    _WIFI_POWER_LABELS: ClassVar[dict[int, str]] = {
+    CHANNELS: ClassVar[dict[int, str]] = {
+        0: "automatic",
+        11: "11",
+        15: "15",
+        20: "20",
+        25: "25",
+        26: "26",
+    }
+    """Valid IEEE 802.15.4 channels. 0 lets the Access Point choose."""
+
+    LOCK_MODES: ClassVar[dict[int, str]] = {
+        0: "accept any tag",
+        1: "reject new tags",
+        2: "accept only booting tags",
+    }
+    """Inventory lock modes; see :attr:`lock`."""
+
+    DISCOVERY_MODES: ClassVar[dict[int, str]] = {
+        0: "multicast",
+        1: "broadcast",
+    }
+    """How the Access Point announces itself to peers."""
+
+    SUBGHZ_CHANNELS: ClassVar[dict[int, str]] = {
+        0: "disabled",
+        100: "864.000 MHz (Europe)",
+        101: "865.006 MHz (Europe)",
+        102: "866.014 MHz (Europe)",
+        103: "867.020 MHz (Europe)",
+        104: "868.027 MHz (Europe)",
+        105: "869.034 MHz (Europe)",
+        200: "903.000 MHz (US)",
+        201: "907.027 MHz (US)",
+        202: "911.054 MHz (US)",
+        203: "915.083 MHz (US)",
+        204: "919.110 MHz (US)",
+        205: "923.138 MHz (US)",
+    }
+    """Valid sub-GHz channels, on hardware that has the radio."""
+
+    WIFI_POWER_LEVELS: ClassVar[dict[int, str]] = {
         78: "19.5 dBm",
         76: "19.0 dBm",
         74: "18.5 dBm",
@@ -321,7 +361,7 @@ class APConfig:
         20: "5.0 dBm",
         8: "2.0 dBm",
     }
-    _LED_BRIGHTNESS_LABELS: ClassVar[dict[int, str]] = {
+    LED_BRIGHTNESS_LEVELS: ClassVar[dict[int, str]] = {
         0: "off",
         15: "10%",
         31: "25%",
@@ -329,7 +369,7 @@ class APConfig:
         191: "75%",
         255: "100%",
     }
-    _TFT_BRIGHTNESS_LABELS: ClassVar[dict[int, str]] = {
+    TFT_BRIGHTNESS_LEVELS: ClassVar[dict[int, str]] = {
         0: "off",
         20: "10%",
         64: "25%",
@@ -337,14 +377,14 @@ class APConfig:
         192: "75%",
         255: "100%",
     }
-    _MAX_SLEEP_LABELS: ClassVar[dict[int, str]] = {
+    MAX_SLEEP_LEVELS: ClassVar[dict[int, str]] = {
         0: "shortest (40 sec)",
         5: "5 min",
         10: "10 min",
         30: "30 min",
         60: "1 hour",
     }
-    _LANGUAGE_LABELS: ClassVar[dict[int, str]] = {
+    LANGUAGES: ClassVar[dict[int, str]] = {
         0: "English",
         1: "Nederlands",
         2: "Deutsch",
@@ -360,29 +400,39 @@ class APConfig:
     }
 
     @property
+    def lock_label(self) -> str:
+        """Human-readable inventory lock mode."""
+        return self.LOCK_MODES.get(self.lock, str(self.lock))
+
+    @property
+    def channel_label(self) -> str:
+        """Human-readable radio channel."""
+        return self.CHANNELS.get(self.channel, str(self.channel))
+
+    @property
     def wifi_power_label(self) -> str:
         """Transmit power in dBm."""
-        return self._WIFI_POWER_LABELS.get(self.wifi_power, str(self.wifi_power))
+        return self.WIFI_POWER_LEVELS.get(self.wifi_power, str(self.wifi_power))
 
     @property
     def led_brightness_label(self) -> str:
         """LED brightness as a human-readable percentage."""
-        return self._LED_BRIGHTNESS_LABELS.get(self.led_brightness, str(self.led_brightness))
+        return self.LED_BRIGHTNESS_LEVELS.get(self.led_brightness, str(self.led_brightness))
 
     @property
     def tft_brightness_label(self) -> str:
         """TFT brightness as a human-readable percentage."""
-        return self._TFT_BRIGHTNESS_LABELS.get(self.tft_brightness, str(self.tft_brightness))
+        return self.TFT_BRIGHTNESS_LEVELS.get(self.tft_brightness, str(self.tft_brightness))
 
     @property
     def max_sleep_label(self) -> str:
         """Maximum tag sleep interval in human-readable form."""
-        return self._MAX_SLEEP_LABELS.get(self.max_sleep, f"{self.max_sleep} min")
+        return self.MAX_SLEEP_LEVELS.get(self.max_sleep, f"{self.max_sleep} min")
 
     @property
     def language_label(self) -> str:
         """Display language name."""
-        return self._LANGUAGE_LABELS.get(self.language, str(self.language))
+        return self.LANGUAGES.get(self.language, str(self.language))
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "APConfig":
@@ -542,6 +592,15 @@ class TagType:
         buttons to something user-visible should assume both may occur.
         """
         return "button" in self.options
+
+    @property
+    def accent_color(self) -> str | None:
+        """The third colour this hardware can render, if it has one.
+
+        Two-colour panels have no accent, so this is ``None`` rather than a
+        colour they cannot produce.
+        """
+        return next((name for name in ("red", "yellow") if name in self.color_table), None)
 
     @property
     def has_led(self) -> bool:

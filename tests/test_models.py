@@ -494,3 +494,37 @@ def test_apconfig_lock_round_trips(apconfig_dict):
     """Learning mode must survive being written back."""
     config = APConfig.from_dict({**apconfig_dict, "lock": 2})
     assert config.to_dict()["lock"] == 2
+
+
+def test_apconfig_exposes_valid_choices():
+    """Consumers need the value sets, not just a label for the current value.
+
+    Home Assistant reinvented these and got several wrong: LED and TFT
+    brightness use different steps, and the language numbering is not
+    alphabetical.
+    """
+    assert APConfig.LED_BRIGHTNESS_LEVELS != APConfig.TFT_BRIGHTNESS_LEVELS
+    assert APConfig.LED_BRIGHTNESS_LEVELS[15] == "10%"
+    assert APConfig.TFT_BRIGHTNESS_LEVELS[20] == "10%"
+    assert APConfig.LANGUAGES[3] == "Norsk"
+    assert APConfig.LANGUAGES[4] == "Français"
+    assert APConfig.CHANNELS[0] == "automatic"
+    assert set(APConfig.LOCK_MODES) == {0, 1, 2}
+
+
+def test_apconfig_labels_come_from_the_public_maps(apconfig_dict):
+    """A label is just a lookup in the same map callers can enumerate."""
+    config = APConfig.from_dict({**apconfig_dict, "lock": 2, "channel": 0})
+    assert config.lock_label == APConfig.LOCK_MODES[2]
+    assert config.channel_label == APConfig.CHANNELS[0]
+
+
+def test_tagtype_accent_color():
+    """A two-colour panel has no accent, and must not claim one."""
+    base = {"width": 296, "height": 152}
+    mono = TagType.from_dict(0x01, {**base, "colortable": {"white": [], "black": []}})
+    bwr = TagType.from_dict(0x04, {**base, "colortable": {"white": [], "black": [], "red": []}})
+    bwy = TagType.from_dict(0x60, {**base, "colortable": {"white": [], "black": [], "yellow": []}})
+    assert mono.accent_color is None
+    assert bwr.accent_color == "red"
+    assert bwy.accent_color == "yellow"
