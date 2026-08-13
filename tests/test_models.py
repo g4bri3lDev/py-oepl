@@ -478,3 +478,76 @@ def test_ssidlist_scanning_status():
 
     result = SSIDList.from_dict({"scanstatus": -1, "networks": []})
     assert result.scan_status == -1
+
+
+def test_apconfig_lock_is_tristate(apconfig_dict):
+    """Inventory lock has three states, so it cannot be a boolean.
+
+    The firmware distinguishes 1 (reject new tags) from 2 (accept only tags
+    that are booting); collapsing them would lose the learning mode.
+    """
+    for raw, expected in ((0, 0), (1, 1), (2, 2)):
+        assert APConfig.from_dict({**apconfig_dict, "lock": raw}).lock == expected
+
+
+def test_apconfig_lock_round_trips(apconfig_dict):
+    """Learning mode must survive being written back."""
+    config = APConfig.from_dict({**apconfig_dict, "lock": 2})
+    assert config.to_dict()["lock"] == 2
+
+
+def test_apconfig_exposes_valid_choices():
+    """Consumers need the value sets, not just a label for the current value.
+
+    Home Assistant reinvented these and got several wrong: LED and TFT
+    brightness use different steps, and the language numbering is not
+    alphabetical.
+    """
+    assert APConfig.LED_BRIGHTNESS_LEVELS != APConfig.TFT_BRIGHTNESS_LEVELS
+    assert APConfig.LED_BRIGHTNESS_LEVELS[15] == "10%"
+    assert APConfig.TFT_BRIGHTNESS_LEVELS[20] == "10%"
+    assert APConfig.LANGUAGES[3] == "Norsk"
+    assert APConfig.LANGUAGES[4] == "Français"
+    assert APConfig.CHANNELS[0] == "automatic"
+    assert set(APConfig.LOCK_MODES) == {0, 1, 2}
+
+
+def test_apconfig_labels_come_from_the_public_maps(apconfig_dict):
+    """A label is just a lookup in the same map callers can enumerate."""
+    config = APConfig.from_dict({**apconfig_dict, "lock": 2, "channel": 0})
+    assert config.lock_label == APConfig.LOCK_MODES[2]
+    assert config.channel_label == APConfig.CHANNELS[0]
+
+
+def test_tagtype_accent_color():
+    """A two-colour panel has no accent, and must not claim one."""
+    base = {"width": 296, "height": 152}
+    mono = TagType.from_dict(0x01, {**base, "colortable": {"white": [], "black": []}})
+    bwr = TagType.from_dict(0x04, {**base, "colortable": {"white": [], "black": [], "red": []}})
+    bwy = TagType.from_dict(0x60, {**base, "colortable": {"white": [], "black": [], "yellow": []}})
+    assert mono.accent_color is None
+    assert bwr.accent_color == "red"
+    assert bwy.accent_color == "yellow"
+
+
+def test_tag_battery_sentinels_are_not_measurements(tag_dict):
+    """1337 mV means the tag has no usable reading, not a flat battery.
+
+    The firmware and the Access Point's own web interface both exclude 0 and
+    1337 wherever they touch battery values.
+    """
+    for mv in (0, 1337):
+        tag = Tag.from_dict({**tag_dict, "batteryMv": mv})
+        assert not tag.has_battery_reading
+        assert tag.battery_low is None
+
+
+def test_tag_battery_low_matches_the_firmware_threshold(tag_dict):
+    """The firmware counts a tag as low below 2400 mV."""
+    assert Tag.from_dict({**tag_dict, "batteryMv": 2399}).battery_low is True
+    assert Tag.from_dict({**tag_dict, "batteryMv": 2400}).battery_low is False
+
+
+def test_rotation_degrees():
+    """The wire value is a quarter-turn count, not degrees."""
+    assert [r.degrees for r in Rotation] == [0, 90, 180, 270]
