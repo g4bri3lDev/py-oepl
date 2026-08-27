@@ -688,6 +688,46 @@ class WifiConfig:
             raw=dict(data),
         )
 
+    def hostname(self, alias: str = "") -> str:
+        """The hostname the AP gives itself on the network.
+
+        Convenience for :func:`build_hostname` using this config's MAC.
+        """
+        return build_hostname(self.mac, alias)
+
+
+# Characters the firmware keeps when deriving a hostname from an alias.
+_HOSTNAME_SAFE = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-")
+
+
+def build_hostname(mac: str, alias: str = "") -> str:
+    """Return the hostname an AP with this MAC and alias gives itself.
+
+    Mirrors ``WifiManager::buildHostname``
+    (``ESP32_AP-Flasher/src/wifimanager.cpp:275``), which is what the AP sends
+    as its DHCP hostname and therefore what discovery matches on.
+
+    With no alias the result is ``OpenEpaperLink-`` followed by the last two
+    bytes of the MAC in uppercase hex. With an alias, the firmware overwrites
+    that buffer from the start with the alias stripped to ``[A-Za-z0-9-]``, so
+    the prefix does not survive and an alias made only of other characters
+    yields an empty string. Both behaviours are reproduced rather than
+    corrected, because the point is to predict what the AP actually calls
+    itself.
+
+    Args:
+        mac: The AP's own MAC address, in any common separator style.
+        alias: The AP's configured alias, if it has one.
+
+    Returns:
+        The hostname, which may be empty for an alias with no usable
+        characters.
+    """
+    if alias:
+        return "".join(char for char in alias if char in _HOSTNAME_SAFE)
+    digits = "".join(char for char in mac if char in "0123456789abcdefABCDEF")
+    return f"OpenEpaperLink-{digits[-4:].upper()}" if len(digits) >= 4 else ""
+
 
 @dataclass
 class WifiNetwork:
