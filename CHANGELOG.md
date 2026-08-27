@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.5.0...v0.6.0) (2026-08-27)
+
+
+### Features
+
+* complete partial sys messages instead of reporting them raw ([#16](https://github.com/g4bri3lDev/py-oepl/issues/16)) ([2091ca6](https://github.com/g4bri3lDev/py-oepl/commit/2091ca6a2bd07a862fe09b99acbec7cadb78ad8b))
+
 ## [0.5.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.4.0...v0.5.0) (2026-08-27)
 
 
