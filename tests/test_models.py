@@ -615,3 +615,56 @@ def test_wifi_config_hostname_uses_its_own_mac() -> None:
     config = WifiConfig.from_dict({"mac": "EC:DA:3B:8D:59:84"})
     assert config.hostname() == "OpenEpaperLink-5984"
     assert config.hostname("Hallway") == "Hallway"
+
+
+# ---------------------------------------------------------------------------
+# Partial sys messages
+# ---------------------------------------------------------------------------
+
+
+def test_merged_with_carries_counts_the_ap_did_not_resend() -> None:
+    """The bug this exists for.
+
+    The AP sends a sys message every five seconds but attaches lowbattcount
+    and timeoutcount only about once a minute, so reading each message on its
+    own shows them as unknown eighteen times out of nineteen.
+    """
+    full = APStatus.from_dict({"lowbattcount": 3, "timeoutcount": 2, "heap": 100})
+    partial = APStatus.from_dict({"heap": 90})
+
+    merged = partial.merged_with(full)
+
+    assert (merged.low_battery_count, merged.timeout_count) == (3, 2)
+
+
+def test_merged_with_keeps_the_newer_values() -> None:
+    """Carrying old fields must not resurrect old readings."""
+    previous = APStatus.from_dict({"heap": 100, "currtime": 1, "lowbattcount": 3})
+    merged = APStatus.from_dict({"heap": 90, "currtime": 2}).merged_with(previous)
+
+    assert (merged.heap, merged.current_time) == (90, 2)
+
+
+def test_merged_with_does_not_invent_a_value_never_reported() -> None:
+    """ps_ram_free is absent for good on a board without PSRAM."""
+    previous = APStatus.from_dict({"heap": 100})
+    merged = APStatus.from_dict({"heap": 90}).merged_with(previous)
+
+    assert merged.ps_ram_free is None
+
+
+def test_merged_with_no_previous_status() -> None:
+    """The first message has nothing to carry over."""
+    status = APStatus.from_dict({"heap": 90})
+    assert status.merged_with(None) is status
+
+
+def test_merged_with_leaves_both_inputs_alone() -> None:
+    """Callers keep whatever references they already hold."""
+    previous = APStatus.from_dict({"lowbattcount": 3})
+    partial = APStatus.from_dict({"heap": 90})
+
+    partial.merged_with(previous)
+
+    assert partial.low_battery_count is None
+    assert previous.heap == 0

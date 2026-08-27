@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, replace
 from datetime import datetime, timezone
 from typing import Any, ClassVar
 
@@ -224,6 +224,36 @@ class APStatus:
     low_battery_count: int | None = None
     timeout_count: int | None = None
     raw: dict[str, Any] = field(repr=False, default_factory=dict)
+
+    def merged_with(self, previous: "APStatus | None") -> "APStatus":
+        """Return this status with fields the AP did not report carried over.
+
+        A ``sys`` message is a partial snapshot, not a full one. The firmware
+        sends one roughly every five seconds but only attaches
+        ``lowbattcount`` and ``timeoutcount`` about once a minute
+        (``web.cpp:182-186``), so a consumer that reads each message as it
+        arrives sees those counts blink to ``None`` eighteen times out of
+        nineteen and renders them as unknown almost permanently.
+
+        Absent means unchanged, so any field parsed as ``None`` here takes the
+        value it had in *previous*. Fields the AP genuinely never reports,
+        such as ``ps_ram_free`` on a board without PSRAM, stay ``None``
+        because they were never anything else.
+
+        Args:
+            previous: The last status seen, or None if this is the first.
+
+        Returns:
+            A new APStatus; neither input is modified.
+        """
+        if previous is None:
+            return self
+        carried = {
+            f.name: getattr(previous, f.name)
+            for f in fields(self)
+            if f.name != "raw" and getattr(self, f.name) is None and getattr(previous, f.name) is not None
+        }
+        return replace(self, **carried) if carried else self
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "APStatus":
