@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.4.0...v0.5.0) (2026-08-27)
+
+
+### Features
+
+* expose the AP's own hostname rule ([#14](https://github.com/g4bri3lDev/py-oepl/issues/14)) ([4fbacdd](https://github.com/g4bri3lDev/py-oepl/commit/4fbacddf0fd654dededf5a048e5e02a2c2fdcf3c))
+
 ## [0.4.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.3.0...v0.4.0) (2026-08-13)
 
 
