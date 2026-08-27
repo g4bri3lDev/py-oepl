@@ -11,7 +11,15 @@ from oepl.enums import (
     TagCapability,
     WakeupReason,
 )
-from oepl.models import APConfig, APInfo, APStatus, Tag, TagType
+from oepl.models import (
+    APConfig,
+    APInfo,
+    APStatus,
+    Tag,
+    TagType,
+    WifiConfig,
+    build_hostname,
+)
 
 
 def test_tag_from_dict(tag_dict):
@@ -551,3 +559,59 @@ def test_tag_battery_low_matches_the_firmware_threshold(tag_dict):
 def test_rotation_degrees():
     """The wire value is a quarter-turn count, not degrees."""
     assert [r.degrees for r in Rotation] == [0, 90, 180, 270]
+
+
+# ---------------------------------------------------------------------------
+# Hostname derivation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("mac", "expected"),
+    [
+        ("EC:DA:3B:8D:59:84", "OpenEpaperLink-5984"),
+        # Separator style is the caller's, not ours.
+        ("ec-da-3b-8d-59-84", "OpenEpaperLink-5984"),
+        ("ecda3b8d5984", "OpenEpaperLink-5984"),
+        # Hex is uppercased, as sprintf("%02X%02X") produces.
+        ("aa:bb:cc:dd:ee:ff", "OpenEpaperLink-EEFF"),
+    ],
+)
+def test_build_hostname_without_an_alias(mac: str, expected: str) -> None:
+    """The last two MAC bytes name an AP that has no alias."""
+    assert build_hostname(mac) == expected
+
+
+def test_build_hostname_prefers_the_alias() -> None:
+    """An alias replaces the derived name entirely.
+
+    The firmware overwrites its buffer from index 0, so the OpenEpaperLink-
+    prefix does not survive an alias being set.
+    """
+    assert build_hostname("EC:DA:3B:8D:59:84", "KitchenAP") == "KitchenAP"
+
+
+def test_build_hostname_strips_characters_a_hostname_cannot_carry() -> None:
+    """Only [A-Za-z0-9-] survives, and nothing is substituted for the rest."""
+    assert build_hostname("EC:DA:3B:8D:59:84", "Kitchen AP #2") == "KitchenAP2"
+
+
+def test_build_hostname_of_an_alias_with_nothing_usable() -> None:
+    """Reproduced rather than corrected: the firmware yields an empty string.
+
+    Predicting what the AP actually calls itself is the point, so a caller
+    that needs a fallback applies its own.
+    """
+    assert build_hostname("EC:DA:3B:8D:59:84", "***") == ""
+
+
+def test_build_hostname_without_a_usable_mac() -> None:
+    """Too few hex digits to name anything."""
+    assert build_hostname("") == ""
+
+
+def test_wifi_config_hostname_uses_its_own_mac() -> None:
+    """The convenience method saves callers threading the MAC through."""
+    config = WifiConfig.from_dict({"mac": "EC:DA:3B:8D:59:84"})
+    assert config.hostname() == "OpenEpaperLink-5984"
+    assert config.hostname("Hallway") == "Hallway"
