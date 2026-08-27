@@ -11,6 +11,7 @@ from oepl.client import OEPLClient
 from oepl.enums import LUT, Rotation, TagCommand
 from oepl.exceptions import OEPLNotFoundError, OEPLResponseError
 from oepl.led import Color, LEDPattern, LEDSegment
+from oepl.models import APStatus
 
 HOST = "192.168.1.1"
 BASE = f"http://{HOST}"
@@ -859,3 +860,49 @@ async def test_set_sleep_window_rejects_out_of_range_hours(client, start, end):
             await client.set_sleep_window(start, end)
 
     assert ("POST", aiohttp.client.URL(f"{BASE}/save_apcfg")) not in m.requests
+
+
+# ---------------------------------------------------------------------------
+# Partial sys messages
+# ---------------------------------------------------------------------------
+
+
+def test_ap_status_callbacks_get_a_complete_view() -> None:
+    """Subscribers must not see counts blink to None between sys messages.
+
+    The AP sends a sys message every five seconds but attaches lowbattcount
+    and timeoutcount only about once a minute, so a subscriber reading each
+    message raw sees them as unknown almost permanently.
+    """
+    client = OEPLClient("127.0.0.1")
+    seen: list[APStatus] = []
+    client.on_ap_status(seen.append)
+
+    client._fire_ap_status(APStatus.from_dict({"lowbattcount": 3, "heap": 100}))
+    client._fire_ap_status(APStatus.from_dict({"heap": 90}))
+
+    assert [s.low_battery_count for s in seen] == [3, 3]
+    # Still the newer reading, not a stale one carried along with the count.
+    assert seen[-1].heap == 90
+
+
+def test_ap_status_is_exposed_on_the_client() -> None:
+    """A late subscriber can read the current status without waiting."""
+    client = OEPLClient("127.0.0.1")
+    assert client.ap_status is None
+
+    client._fire_ap_status(APStatus.from_dict({"lowbattcount": 3}))
+
+    assert client.ap_status is not None
+    assert client.ap_status.low_battery_count == 3
+
+
+def test_ap_status_is_dropped_when_the_connection_goes() -> None:
+    """An AP that comes back may have rebooted and reset its counters."""
+    client = OEPLClient("127.0.0.1")
+    client._set_connected(True)
+    client._fire_ap_status(APStatus.from_dict({"lowbattcount": 3}))
+
+    client._set_connected(False)
+
+    assert client.ap_status is None

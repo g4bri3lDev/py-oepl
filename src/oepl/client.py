@@ -95,6 +95,8 @@ class OEPLClient:
         # Callback registries
         self._tag_update_cbs: list[Callable[[Tag], None]] = []
         self._ap_status_cbs: list[Callable[[APStatus], None]] = []
+        # Last status, kept so partial sys messages can be completed.
+        self._ap_status: APStatus | None = None
         self._connection_change_cbs: list[Callable[[bool], None]] = []
         self._log_cbs: list[Callable[[str], None]] = []
         self._ap_item_cbs: list[Callable[[APListItem], None]] = []
@@ -196,8 +198,21 @@ class OEPLClient:
         self._tag_update_cbs.append(registered)
         return lambda: self._tag_update_cbs.remove(registered)
 
+    @property
+    def ap_status(self) -> "APStatus | None":
+        """The AP's current status, or None before the first ``sys`` message.
+
+        Completed from earlier messages -- see :meth:`APStatus.merged_with`.
+        """
+        return self._ap_status
+
     def on_ap_status(self, cb: Callable[[APStatus], None]) -> Callable[[], None]:
-        """Subscribe to AP system status updates."""
+        """Subscribe to AP system status updates.
+
+        The status passed to *cb* is a complete view, not the raw contents of
+        one ``sys`` message: fields the AP omits keep the value they last had.
+        See :meth:`APStatus.merged_with` for why that matters.
+        """
         self._ap_status_cbs.append(cb)
         return lambda: self._ap_status_cbs.remove(cb)
 
@@ -1049,6 +1064,10 @@ class OEPLClient:
     def _set_connected(self, value: bool) -> None:
         if self._connected != value:
             self._connected = value
+            if not value:
+                # An AP that comes back may have rebooted and reset its
+                # counters, so nothing from before the drop is carried over.
+                self._ap_status = None
             for cb in list(self._connection_change_cbs):
                 try:
                     cb(value)
@@ -1063,9 +1082,11 @@ class OEPLClient:
                 _LOGGER.debug("on_tag_update callback error: %s", exc)
 
     def _fire_ap_status(self, status: APStatus) -> None:
+        merged = status.merged_with(self._ap_status)
+        self._ap_status = merged
         for cb in list(self._ap_status_cbs):
             try:
-                cb(status)
+                cb(merged)
             except Exception as exc:
                 _LOGGER.debug("on_ap_status callback error: %s", exc)
 
