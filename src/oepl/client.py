@@ -14,7 +14,7 @@ from PIL import Image
 
 from ._http import _HTTPClient, quote_query_value
 from .enums import LUT, ContentMode, Rotation, TagCommand
-from .exceptions import OEPLConnectionError, OEPLTimeoutError
+from .exceptions import OEPLConnectionError, OEPLError, OEPLTimeoutError
 from .files import Files
 from .image import decode_image_pil
 from .led import LEDPattern
@@ -871,6 +871,23 @@ class OEPLClient:
         """
         data = await self._http.get_json("get_wifi_config")
         return WifiConfig.from_dict(data)
+
+    async def get_ap_mac(self) -> str:
+        """Return the AP's own MAC address, which identifies it.
+
+        The host is no identity, since DHCP can move the AP, and ``/sysinfo``
+        carries no MAC. The only endpoint that reports it is
+        ``/get_wifi_config`` (web.cpp:872, ``WiFi.macAddress()``), whose
+        response also holds the stored WiFi password. Only the MAC is
+        returned.
+
+        Raises:
+            OEPLError: The AP reported no MAC address.
+        """
+        mac = (await self.get_wifi_config()).mac
+        if not mac:
+            raise OEPLError("The AP reported no MAC address")
+        return mac
 
     async def get_ssid_list(self) -> SSIDList:
         """Fetch nearby WiFi networks from ``/get_ssid_list`` (web.cpp:764-788).
