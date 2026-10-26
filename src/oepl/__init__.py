@@ -33,6 +33,7 @@ from .models import (
     UploadProgress,
     WifiConfig,
     WifiNetwork,
+    ap_display_mac,
     build_hostname,
 )
 from .tag_handle import TagHandle
@@ -57,6 +58,7 @@ __all__ = [
     "APListItem",
     "UploadProgress",
     "WifiConfig",
+    "ap_display_mac",
     "build_hostname",
     "WifiNetwork",
     "SSIDList",

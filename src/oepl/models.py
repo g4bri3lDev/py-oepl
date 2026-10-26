@@ -117,6 +117,18 @@ class Tag:
         """Whether ``battery_mv`` is an actual measurement."""
         return self.battery_mv not in self.NO_BATTERY_READING
 
+    def is_ap_display(self, ap_mac: str) -> bool:
+        """Whether this tag is the Access Point's own built-in display.
+
+        Convenience for :func:`ap_display_mac`. The display is reported as a tag
+        but has no battery, radio link or sensors, so its battery, temperature,
+        LQI and RSSI fields are placeholders rather than readings.
+
+        Args:
+            ap_mac: The AP's own MAC address, in any common separator style.
+        """
+        return self.mac.upper() == ap_display_mac(ap_mac)
+
     @property
     def battery_low(self) -> bool | None:
         """Whether the firmware would count this tag as low on battery."""
@@ -757,6 +769,35 @@ def build_hostname(mac: str, alias: str = "") -> str:
         return "".join(char for char in alias if char in _HOSTNAME_SAFE)
     digits = "".join(char for char in mac if char in "0123456789abcdefABCDEF")
     return f"OpenEpaperLink-{digits[-4:].upper()}" if len(digits) >= 4 else ""
+
+
+def ap_display_mac(mac: str) -> str:
+    """Return the tag MAC an AP with this MAC gives its own built-in display.
+
+    An AP with a screen registers that screen as a tag
+    (``ESP32_AP-Flasher/src/ips_display.cpp:417``, ``sendAvail``), using its
+    WiFi MAC as the first six of the tag's eight MAC bytes and leaving the last
+    two zero. Tag MACs are printed most significant byte first, which is the
+    reverse of how they are stored, so the result is ``0000`` followed by the
+    WiFi MAC's bytes in reverse order. The firmware recognises the display the
+    same way (``contentmanager.cpp:83``, ``isAp``).
+
+    Matching on the MAC rather than the tag's ``hw_type`` is deliberate: the
+    display's hardware type depends on the board (0xE0, 0xE1, 0xE2, or a
+    board-specific ``TFT_HW_TYPE``).
+
+    Args:
+        mac: The AP's own MAC address, in any common separator style.
+
+    Returns:
+        The display's tag MAC in uppercase hex, or an empty string if *mac*
+        does not hold six bytes.
+    """
+    digits = "".join(char for char in mac if char in "0123456789abcdefABCDEF").upper()
+    if len(digits) != 12:
+        return ""
+    octets = [digits[i : i + 2] for i in range(0, 12, 2)]
+    return "0000" + "".join(reversed(octets))
 
 
 @dataclass

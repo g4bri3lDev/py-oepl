@@ -18,6 +18,7 @@ from oepl.models import (
     Tag,
     TagType,
     WifiConfig,
+    ap_display_mac,
     build_hostname,
 )
 
@@ -668,3 +669,31 @@ def test_merged_with_leaves_both_inputs_alone() -> None:
 
     assert partial.low_battery_count is None
     assert previous.heap == 0
+
+
+# The AP's own display
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "mac",
+    ["EC:DA:3B:8D:59:84", "ec-da-3b-8d-59-84", "ecda3b8d5984"],
+)
+def test_ap_display_mac_reverses_the_wifi_mac(mac: str) -> None:
+    """Taken from a real AP, whose display reports as tag 000084598D3BDAEC."""
+    assert ap_display_mac(mac) == "000084598D3BDAEC"
+
+
+@pytest.mark.parametrize("mac", ["", "EC:DA:3B:8D:59", "00:00:EC:DA:3B:8D:59:84"])
+def test_ap_display_mac_needs_six_bytes(mac: str) -> None:
+    """Anything that is not a six-byte MAC matches no tag."""
+    assert ap_display_mac(mac) == ""
+
+
+def test_tag_is_ap_display() -> None:
+    """Only the tag carrying the AP's reversed MAC is its display."""
+    display = Tag.from_dict({"mac": "000084598d3bdaec", "hwType": 0xE0})
+    other = Tag.from_dict({"mac": "0000021D56A13410", "hwType": 0x01})
+    assert display.is_ap_display("EC:DA:3B:8D:59:84")
+    assert not other.is_ap_display("EC:DA:3B:8D:59:84")
+    assert not display.is_ap_display("")
