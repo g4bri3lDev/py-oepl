@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.7.0...v0.8.0) (2026-10-26)
+
+
+### Features
+
+* return the Access Point's MAC with get_ap_mac ([f2bb93b](https://github.com/g4bri3lDev/py-oepl/commit/f2bb93b602724ce93eaf59376b8df76e27d833ae))
+
 ## [0.7.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.6.0...v0.7.0) (2026-10-26)
 
 
