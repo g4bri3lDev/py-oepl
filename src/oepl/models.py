@@ -746,7 +746,7 @@ def build_hostname(mac: str, alias: str = "") -> str:
     """Return the hostname an AP with this MAC and alias gives itself.
 
     Mirrors ``WifiManager::buildHostname``
-    (``ESP32_AP-Flasher/src/wifimanager.cpp:275``), which is what the AP sends
+    (``ESP32_AP-Flasher/src/wifimanager.cpp:359``), which is what the AP sends
     as its DHCP hostname and therefore what discovery matches on.
 
     With no alias the result is ``OpenEpaperLink-`` followed by the last two
