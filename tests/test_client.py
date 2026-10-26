@@ -906,3 +906,29 @@ def test_ap_status_is_dropped_when_the_connection_goes() -> None:
     client._set_connected(False)
 
     assert client.ap_status is None
+
+
+# Tag type files
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("hw_type", "filename"),
+    [
+        # Radio tags keep their one-byte type and two-digit file.
+        (0x04, "04.json"),
+        (0xE0, "E0.json"),
+        # Types above 0xFF, which the AP assigns itself (OpenDisplay BLE tags),
+        # are named with four digits: tag_db.cpp, "/tagtypes/%04X.json".
+        (0x101, "0101.json"),
+        (0x1234, "1234.json"),
+    ],
+)
+async def test_get_tag_type_uses_the_firmware_file_name(client, hw_type, filename):
+    with aioresponses() as m:
+        m.get(f"{BASE}/tagtypes/{filename}", payload={"width": 296, "height": 128})
+        tag_type = await client.get_tag_type(hw_type)
+
+    assert tag_type is not None
+    assert tag_type.width == 296
