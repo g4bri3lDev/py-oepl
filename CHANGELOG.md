@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.6.0...v0.7.0) (2026-10-26)
+
+
+### Features
+
+* recognise the Access Point's own display among its tags ([8ea670d](https://github.com/g4bri3lDev/py-oepl/commit/8ea670d94b420bb56a4df54bf6e06d78f8f66492))
+
+
+### Bug Fixes
+
+* fetch tag types above 0xFF from their four-digit file ([cd6b8ba](https://github.com/g4bri3lDev/py-oepl/commit/cd6b8bae81a0dabae917ad16b4c641f9111b366e))
+
+
+### Documentation
+
+* point build_hostname at where buildHostname now lives in the firmware ([15fc0d3](https://github.com/g4bri3lDev/py-oepl/commit/15fc0d3a463cedc95484c143050f7a56574857fb))
+
 ## [0.6.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.5.0...v0.6.0) (2026-08-27)
 
 
