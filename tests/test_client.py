@@ -9,7 +9,7 @@ from aioresponses import aioresponses
 
 from oepl.client import OEPLClient
 from oepl.enums import LUT, Rotation, TagCommand
-from oepl.exceptions import OEPLNotFoundError, OEPLResponseError
+from oepl.exceptions import OEPLError, OEPLNotFoundError, OEPLResponseError
 from oepl.led import Color, LEDPattern, LEDSegment
 from oepl.models import APStatus
 
@@ -662,6 +662,23 @@ async def test_get_wifi_config(client):
     assert cfg.password == "secret"
     assert cfg.mac == "AA:BB:CC:DD:EE:FF"
     assert cfg.raw == payload
+
+
+@pytest.mark.asyncio
+async def test_get_ap_mac(client):
+    """The MAC comes from the Wi-Fi config, without handing out the password."""
+    payload = {"ssid": "home-network", "pw": "secret", "mac": "EC:DA:3B:8D:59:84"}
+    with aioresponses() as m:
+        m.get(f"{BASE}/get_wifi_config", payload=payload)
+        assert await client.get_ap_mac() == "EC:DA:3B:8D:59:84"
+
+
+@pytest.mark.asyncio
+async def test_get_ap_mac_raises_when_the_ap_reports_none(client):
+    with aioresponses() as m:
+        m.get(f"{BASE}/get_wifi_config", payload={"ssid": "home-network", "mac": ""})
+        with pytest.raises(OEPLError):
+            await client.get_ap_mac()
 
 
 @pytest.mark.asyncio
