@@ -275,14 +275,19 @@ async def test_firmware_flash_follows_the_console_until_it_succeeds(client):
                 "Progress: 50% 617 1234",
                 "Firmware update successful",
                 "Reboot system now",
+                "[reboot]",
             ),
         )
+        m.post(f"{BASE}/reboot", body="OK Reboot")
         await client.updates.update_firmware(_release(), ENV, on_progress=progress.append)
 
     ((_args, kwargs),) = m.requests[("POST", aiohttp.client.URL(f"{BASE}/update_ota"))]
     assert kwargs["data"] == {"url": f"{DOWNLOAD}/{ENV}.bin", "md5": "abc", "size": "1234"}
     assert [p.percent for p in progress] == [0, 50, 100]
     assert {p.stage for p in progress} == {UpdateStage.FIRMWARE}
+    # The AP keeps running the old image until it is rebooted; its page has a
+    # button for that, which nobody presses here.
+    assert ("POST", aiohttp.client.URL(f"{BASE}/reboot")) in m.requests
 
 
 async def test_firmware_from_before_the_github_proxy_downloads_through_the_web_proxy(client):
@@ -291,6 +296,7 @@ async def test_firmware_from_before_the_github_proxy_downloads_through_the_web_p
         m.get(f"{DOWNLOAD}/binaries.json", body=_binaries())
         m.get(f"{BASE}/github_proxy", status=404)
         m.post(f"{BASE}/update_ota", callback=_console(client, "Firmware update successful"))
+        m.post(f"{BASE}/reboot", body="OK Reboot")
         await client.updates.update_firmware(_release(), ENV)
 
     ((_args, kwargs),) = m.requests[("POST", aiohttp.client.URL(f"{BASE}/update_ota"))]
@@ -305,6 +311,8 @@ async def test_firmware_flash_failure_raises_what_the_ap_said(client):
         m.post(f"{BASE}/update_ota", callback=_console(client, "Failed to download firmware file (HTTP code 404)"))
         with pytest.raises(OEPLUpdateError, match="HTTP code 404"):
             await client.updates.update_firmware(_release(), ENV)
+        # Rebooting would only restart the old image.
+        assert ("POST", aiohttp.client.URL(f"{BASE}/reboot")) not in m.requests
 
 
 async def test_firmware_flash_times_out_without_an_outcome(client):

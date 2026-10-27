@@ -336,7 +336,11 @@ class Updates:
     ) -> None:
         """Flash the AP's firmware from *release*. **REBOOTS THE AP.**
 
-        Returns once the AP reports the image written; it reboots right after.
+        Writing the image does not restart the AP: the firmware prints
+        "Reboot system now" and a ``[reboot]`` marker, which its update page
+        renders as a button, and keeps running the old image
+        (``ota.cpp:updateFirmware``). Once the image is written this reboots
+        the AP, as that button does, and returns.
 
         Raises:
             OEPLUpdateError: If the release has no image for *env*, or the AP
@@ -360,6 +364,7 @@ class Updates:
             on_progress,
             timeout,
         )
+        await self._client.reboot_ap()
 
     async def update_radio(
         self,

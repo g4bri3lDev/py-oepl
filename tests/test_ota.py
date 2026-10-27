@@ -45,13 +45,16 @@ async def test_update_ota_bad_request_raises(client):
 
 
 @pytest.mark.asyncio
-async def test_rollback_posts_no_body(client):
+async def test_rollback_posts_no_body_and_reboots(client):
     with aioresponses() as m:
         m.post(f"{BASE}/rollback", status=200, body="Rollback successful")
+        m.post(f"{BASE}/reboot", status=200, body="OK Reboot")
         await client.rollback()
 
     _args, kwargs = _form_call(m, "POST", "rollback")
     assert kwargs["data"] == {}
+    # Switching the image does not restart the AP by itself.
+    _form_call(m, "POST", "reboot")
 
 
 @pytest.mark.asyncio
