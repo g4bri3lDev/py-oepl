@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/g4bri3lDev/py-oepl/compare/v0.9.0...v0.9.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* reboot the AP after flashing its firmware or rolling it back ([21571e5](https://github.com/g4bri3lDev/py-oepl/commit/21571e5af1025f6439e4074d0e43a00480810c9f))
+
 ## [0.9.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.8.0...v0.9.0) (2026-10-27)
 
 
