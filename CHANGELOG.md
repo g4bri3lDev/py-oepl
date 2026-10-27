@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.8.0...v0.9.0) (2026-10-27)
+
+
+### Features
+
+* find and install firmware releases the way the AP's update page does ([a67bd76](https://github.com/g4bri3lDev/py-oepl/commit/a67bd76c79842000f933bf51e85816d8e759c602))
+
 ## [0.8.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.7.0...v0.8.0) (2026-10-26)
 
 
