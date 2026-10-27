@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.10.0...v0.11.0) (2026-10-27)
+
+
+### Features
+
+* format hardware types and tag firmware versions as the AP does ([9a224b4](https://github.com/g4bri3lDev/py-oepl/commit/9a224b48902888a003d5735e98918cb8ead2d4a6))
+* guess who made a tag from its tag type's name ([bfe54ae](https://github.com/g4bri3lDev/py-oepl/commit/bfe54ae987d3060d59c3fd803cc1d4a67f05f1fd))
+
 ## [0.10.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.9.2...v0.10.0) (2026-10-27)
 
 
