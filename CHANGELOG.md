@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2](https://github.com/g4bri3lDev/py-oepl/compare/v0.9.1...v0.9.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* report radio flash progress once across all of its images ([e86aae7](https://github.com/g4bri3lDev/py-oepl/commit/e86aae745674bebbef5fe1c1a527f833408be1d4))
+
 ## [0.9.1](https://github.com/g4bri3lDev/py-oepl/compare/v0.9.0...v0.9.1) (2026-10-27)
 
 
