@@ -22,6 +22,7 @@ from oepl.models import (
     build_hostname,
     format_hw_type,
     format_tag_firmware_version,
+    guess_manufacturer,
 )
 
 
@@ -710,3 +711,29 @@ def test_format_tag_firmware_version_as_its_images_name_it() -> None:
     # Seen on real tags: they report 41 for the image SOL_M2_29_SSD_0029.bin.
     assert format_tag_firmware_version(41) == "0029"
     assert format_tag_firmware_version(0x2B) == "002B"
+
+
+@pytest.mark.parametrize(
+    ("name", "maker"),
+    [
+        # Names of real tag type definitions.
+        ('M2 2.9"', "SoluM"),
+        ('M3 6.0" BWRY', "SoluM"),
+        ('HS 2.13" BWR High Res', "Hanshow"),
+        ('Gicisky BLE EPD BWRY 2.9"', "Gicisky"),
+        ('Opticon 7.5"', "Opticon"),
+        ('LILYGO TPANEL 4"', "LILYGO"),
+        ("ATC MiThermometer BLE", "Xiaomi"),
+        ('GDEM1085Z51 10.85"', "Good Display"),
+        # A radio, a display technology, an AP's screen: nothing to go on.
+        ('GFSK10 2.7" BWR 176x264', None),
+        ('TLSR BW 2.13"', None),
+        ("Spectra 7.3", None),
+        ("TFT 320x172", None),
+        ('Chroma29 2.9"', None),
+        ("", None),
+    ],
+)
+def test_guess_manufacturer_from_the_tag_type_name(name: str, maker: str | None) -> None:
+    assert guess_manufacturer(name) == maker
+    assert TagType(type_id=0, width=1, height=1, name=name).manufacturer == maker

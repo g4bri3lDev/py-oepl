@@ -699,6 +699,11 @@ class TagType:
         """
         return "led" in self.options
 
+    @property
+    def manufacturer(self) -> str | None:
+        """Who made this hardware, guessed from its name; see :func:`guess_manufacturer`."""
+        return guess_manufacturer(self.name)
+
     @classmethod
     def from_dict(cls, type_id: int, data: dict[str, Any]) -> "TagType":
         return cls(
@@ -791,6 +796,37 @@ def build_hostname(mac: str, alias: str = "") -> str:
         return "".join(char for char in alias if char in _HOSTNAME_SAFE)
     digits = "".join(char for char in mac if char in "0123456789abcdefABCDEF")
     return f"OpenEpaperLink-{digits[-4:].upper()}" if len(digits) >= 4 else ""
+
+
+# The start of a tag type's name, and who makes such hardware. Only names that
+# give it away: many start with a radio (GFSK10, TLSR, BLE), a panel part
+# number or a display technology instead, which says nothing about the maker.
+_MANUFACTURER_PREFIXES: tuple[tuple[str, str], ...] = (
+    # The firmware for these is named SOL_M2_... and SOL_M3_...
+    ("M2 ", "SoluM"),
+    ("M3 ", "SoluM"),
+    ("HS ", "Hanshow"),
+    ("Gicisky ", "Gicisky"),
+    ("Opticon ", "Opticon"),
+    ("LILYGO ", "LILYGO"),
+    # Xiaomi's Mi thermometer, running the ATC firmware.
+    ("ATC MiThermometer", "Xiaomi"),
+    # Good Display's part numbers.
+    ("GDEM", "Good Display"),
+)
+
+
+def guess_manufacturer(type_name: str) -> str | None:
+    """Guess who made a tag from its tag type's name (:attr:`TagType.name`).
+
+    Tag type definitions name the hardware but not its maker, and only some
+    names start with one ("M2 2.9\"" is SoluM's, "HS 2.13\" BWR" Hanshow's).
+    Returns ``None`` where the name does not give it away.
+    """
+    return next(
+        (maker for prefix, maker in _MANUFACTURER_PREFIXES if type_name.startswith(prefix)),
+        None,
+    )
 
 
 def format_hw_type(hw_type: int) -> str:

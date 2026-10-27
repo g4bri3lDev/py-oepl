@@ -38,6 +38,7 @@ from .models import (
     build_hostname,
     format_hw_type,
     format_tag_firmware_version,
+    guess_manufacturer,
 )
 from .tag_handle import TagHandle
 from .update import (
@@ -77,6 +78,7 @@ __all__ = [
     "build_hostname",
     "format_hw_type",
     "format_tag_firmware_version",
+    "guess_manufacturer",
     "WifiNetwork",
     "SSIDList",
     # Files
