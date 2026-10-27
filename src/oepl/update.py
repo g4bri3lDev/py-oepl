@@ -50,6 +50,7 @@ from .exceptions import (
     OEPLTimeoutError,
     OEPLUpdateError,
 )
+from .models import format_hw_type
 
 if TYPE_CHECKING:
     from .client import OEPLClient
@@ -462,7 +463,7 @@ class Updates:
         """
         url = _TAG_FIRMWARE_URL.format(repo=repo, name="tagotaversions.json")
         try:
-            entry = (await self._get_json(url))[0].get(_hw_type_key(tag.hw_type))
+            entry = (await self._get_json(url))[0].get(format_hw_type(tag.hw_type))
         except (IndexError, KeyError, TypeError, AttributeError) as err:
             raise OEPLUpdateError(f"Unexpected tag firmware list at {url}") from err
         if not entry or not entry.get("type"):
@@ -677,11 +678,6 @@ class Updates:
             return json.loads(await self._get_bytes(url))
         except ValueError as err:
             raise OEPLUpdateError(f"{url} is not JSON") from err
-
-
-def _hw_type_key(hw_type: int) -> str:
-    """A hardware type as tagotaversions.json keys it ("01", or "0103")."""
-    return f"{hw_type:0{4 if hw_type > 0xFF else 2}X}"
 
 
 def _plain_progress(line: str) -> int | None:

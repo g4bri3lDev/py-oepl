@@ -20,6 +20,9 @@ from oepl.models import (
     WifiConfig,
     ap_display_mac,
     build_hostname,
+    format_hw_type,
+    format_tag_firmware_version,
+    guess_manufacturer,
 )
 
 
@@ -697,3 +700,45 @@ def test_tag_is_ap_display() -> None:
     assert display.is_ap_display("EC:DA:3B:8D:59:84")
     assert not other.is_ap_display("EC:DA:3B:8D:59:84")
     assert not display.is_ap_display("")
+
+
+@pytest.mark.parametrize(("hw_type", "text"), [(0x01, "01"), (0xE0, "E0"), (0xFF, "FF"), (0x103, "0103")])
+def test_format_hw_type_as_the_ap_names_its_tag_type_files(hw_type: int, text: str) -> None:
+    assert format_hw_type(hw_type) == text
+
+
+def test_format_tag_firmware_version_as_its_images_name_it() -> None:
+    # Seen on real tags: they report 41 for the image SOL_M2_29_SSD_0029.bin.
+    assert format_tag_firmware_version(41) == "0029"
+    assert format_tag_firmware_version(0x2B) == "002B"
+
+
+@pytest.mark.parametrize(
+    ("name", "maker"),
+    [
+        # Names of real tag type definitions.
+        ('M2 2.9"', "SoluM"),
+        ('M3 6.0" BWRY', "SoluM"),
+        ('HS 2.13" BWR High Res', "Hanshow"),
+        ('Gicisky BLE EPD BWRY 2.9"', "Gicisky"),
+        ('Opticon 7.5"', "Opticon"),
+        ('LILYGO TPANEL 4"', "LILYGO"),
+        ("ATC MiThermometer BLE", "Xiaomi"),
+        ('GDEM1085Z51 10.85"', "Good Display"),
+        ('ST\u2010GM29XXF 2.9"', "SoluM"),
+        ('ST\u2010GM29MT1 2.9"', "SoluM"),
+        ("SLT\u2010EM007 Segmented", "SoluM"),
+        ('HD150 5.83" BWR', "Pricer"),
+        # A radio, a display technology, an AP's screen: nothing to go on.
+        ('GFSK10 2.7" BWR 176x264', None),
+        ('TLSR BW 2.13"', None),
+        ("Spectra 7.3", None),
+        ("TFT 320x172", None),
+        ('Chroma29 2.9"', "Display Data"),
+        ('Chroma Aeon 74 7.4"', "Display Data"),
+        ("", None),
+    ],
+)
+def test_guess_manufacturer_from_the_tag_type_name(name: str, maker: str | None) -> None:
+    assert guess_manufacturer(name) == maker
+    assert TagType(type_id=0, width=1, height=1, name=name).manufacturer == maker

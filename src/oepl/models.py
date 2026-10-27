@@ -699,6 +699,11 @@ class TagType:
         """
         return "led" in self.options
 
+    @property
+    def manufacturer(self) -> str | None:
+        """Who made this hardware, guessed from its name; see :func:`guess_manufacturer`."""
+        return guess_manufacturer(self.name)
+
     @classmethod
     def from_dict(cls, type_id: int, data: dict[str, Any]) -> "TagType":
         return cls(
@@ -791,6 +796,69 @@ def build_hostname(mac: str, alias: str = "") -> str:
         return "".join(char for char in alias if char in _HOSTNAME_SAFE)
     digits = "".join(char for char in mac if char in "0123456789abcdefABCDEF")
     return f"OpenEpaperLink-{digits[-4:].upper()}" if len(digits) >= 4 else ""
+
+
+# The start of a tag type's name, and who makes such hardware. Only names that
+# give it away: many start with a radio (GFSK10, TLSR, BLE), a panel part
+# number or a display technology instead, which says nothing about the maker.
+_MANUFACTURER_PREFIXES: tuple[tuple[str, str], ...] = (
+    # The firmware for these is named SOL_M2_... and SOL_M3_...
+    ("M2 ", "SoluM"),
+    ("M3 ", "SoluM"),
+    # SoluM's model numbers, as OpenEPaperLink's wiki documents them. The
+    # segmented SLT tags carry Samsung Electro-Mechanics' brand, from before
+    # SoluM was spun off from it. Tag type names write these with U+2010.
+    ("ST\u2010GM", "SoluM"),
+    ("ST-GM", "SoluM"),
+    ("SLT\u2010", "SoluM"),
+    ("SLT-", "SoluM"),
+    ("HS ", "Hanshow"),
+    ("Gicisky ", "Gicisky"),
+    ("Opticon ", "Opticon"),
+    ("LILYGO ", "LILYGO"),
+    # The Chroma series, sold under other brands too (Breece); OpenEPaperLink's
+    # Tag_FW_Chroma names Display Data as the maker.
+    ("Chroma", "Display Data"),
+    # Xiaomi's Mi thermometer, running the ATC firmware.
+    ("ATC MiThermometer", "Xiaomi"),
+    # Good Display's part numbers.
+    ("GDEM", "Good Display"),
+    # The Pricer Smart Tag HD150.
+    ("HD150", "Pricer"),
+)
+
+
+def guess_manufacturer(type_name: str) -> str | None:
+    """Guess who made a tag from its tag type's name (:attr:`TagType.name`).
+
+    Tag type definitions name the hardware but not its maker, and only some
+    names start with one ("M2 2.9\"" is SoluM's, "HS 2.13\" BWR" Hanshow's) or
+    a product line whose maker is known (Display Data's Chroma series).
+    Returns ``None`` where the name does not give it away.
+    """
+    return next(
+        (maker for prefix, maker in _MANUFACTURER_PREFIXES if type_name.startswith(prefix)),
+        None,
+    )
+
+
+def format_hw_type(hw_type: int) -> str:
+    """Format a tag hardware type as the AP writes it: ``"01"``, or ``"0103"``.
+
+    Types above 0xFF are ones the AP assigns itself and get four hex digits
+    (``tag_db.cpp:471``, ``getHwType``). The AP names its tag type files this
+    way (``/tagtypes/01.json``), and so does the tag firmware list.
+    """
+    return f"{hw_type:0{4 if hw_type > 0xFF else 2}X}"
+
+
+def format_tag_firmware_version(version: int) -> str:
+    """Format a tag's firmware version as its images name it: 41 is ``"0029"``.
+
+    Tags report the version as a number (:attr:`Tag.firmware_version`); the
+    firmware images carry it in hex (``SOL_M2_29_SSD_0029.bin``).
+    """
+    return f"{version:04X}"
 
 
 def ap_display_mac(mac: str) -> str:
