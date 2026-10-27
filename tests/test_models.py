@@ -725,12 +725,17 @@ def test_format_tag_firmware_version_as_its_images_name_it() -> None:
         ('LILYGO TPANEL 4"', "LILYGO"),
         ("ATC MiThermometer BLE", "Xiaomi"),
         ('GDEM1085Z51 10.85"', "Good Display"),
+        ('ST\u2010GM29XXF 2.9"', "SoluM"),
+        ('ST\u2010GM29MT1 2.9"', "SoluM"),
+        ("SLT\u2010EM007 Segmented", "SoluM"),
+        ('HD150 5.83" BWR', "Pricer"),
         # A radio, a display technology, an AP's screen: nothing to go on.
         ('GFSK10 2.7" BWR 176x264', None),
         ('TLSR BW 2.13"', None),
         ("Spectra 7.3", None),
         ("TFT 320x172", None),
-        ('Chroma29 2.9"', None),
+        ('Chroma29 2.9"', "Display Data"),
+        ('Chroma Aeon 74 7.4"', "Display Data"),
         ("", None),
     ],
 )

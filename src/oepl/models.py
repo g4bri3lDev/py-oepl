@@ -805,14 +805,26 @@ _MANUFACTURER_PREFIXES: tuple[tuple[str, str], ...] = (
     # The firmware for these is named SOL_M2_... and SOL_M3_...
     ("M2 ", "SoluM"),
     ("M3 ", "SoluM"),
+    # SoluM's model numbers, as OpenEPaperLink's wiki documents them. The
+    # segmented SLT tags carry Samsung Electro-Mechanics' brand, from before
+    # SoluM was spun off from it. Tag type names write these with U+2010.
+    ("ST\u2010GM", "SoluM"),
+    ("ST-GM", "SoluM"),
+    ("SLT\u2010", "SoluM"),
+    ("SLT-", "SoluM"),
     ("HS ", "Hanshow"),
     ("Gicisky ", "Gicisky"),
     ("Opticon ", "Opticon"),
     ("LILYGO ", "LILYGO"),
+    # The Chroma series, sold under other brands too (Breece); OpenEPaperLink's
+    # Tag_FW_Chroma names Display Data as the maker.
+    ("Chroma", "Display Data"),
     # Xiaomi's Mi thermometer, running the ATC firmware.
     ("ATC MiThermometer", "Xiaomi"),
     # Good Display's part numbers.
     ("GDEM", "Good Display"),
+    # The Pricer Smart Tag HD150.
+    ("HD150", "Pricer"),
 )
 
 
@@ -820,7 +832,8 @@ def guess_manufacturer(type_name: str) -> str | None:
     """Guess who made a tag from its tag type's name (:attr:`TagType.name`).
 
     Tag type definitions name the hardware but not its maker, and only some
-    names start with one ("M2 2.9\"" is SoluM's, "HS 2.13\" BWR" Hanshow's).
+    names start with one ("M2 2.9\"" is SoluM's, "HS 2.13\" BWR" Hanshow's) or
+    a product line whose maker is known (Display Data's Chroma series).
     Returns ``None`` where the name does not give it away.
     """
     return next(
