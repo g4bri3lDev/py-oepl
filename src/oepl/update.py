@@ -62,6 +62,10 @@ _FLASH_TIMEOUT = 600.0
 _BUILD_GRACE_SECONDS = 30 * 60
 
 _PROGRESS = re.compile(r"^Progress: (\d+)%")
+# A radio flash lists the images of the manifest it picked, then flashes them
+# in that order (espflasher.cpp).
+_RADIO_IMAGE = re.compile(r"^  (\S+\.bin)")
+_RADIO_FLASHING = "Flashing /"
 
 # Console lines that end a firmware flash (ota.cpp:firmwareUpdateTask).
 _FIRMWARE_DONE = ("Firmware update successful",)
@@ -85,7 +89,7 @@ class UpdateProgress:
     """How far an update has got.
 
     *percent* is that of the current stage, or ``None`` where the AP reports
-    none. A radio flash writes several images and reports each from 0 to 100.
+    none.
     """
 
     stage: UpdateStage
@@ -150,6 +154,8 @@ class Release:
     notes: str
     # Asset name to download URL.
     assets: dict[str, str] = field(default_factory=dict)
+    # Asset name to size in bytes.
+    asset_sizes: dict[str, int] = field(default_factory=dict)
 
     @classmethod
     def from_github(cls, data: dict[str, Any]) -> "Release":
@@ -165,6 +171,9 @@ class Release:
                 str(asset["name"]): str(asset["browser_download_url"])
                 for asset in data.get("assets", [])
                 if "name" in asset and "browser_download_url" in asset
+            },
+            asset_sizes={
+                str(asset["name"]): int(asset.get("size") or 0) for asset in data.get("assets", []) if "name" in asset
             },
         )
 
@@ -380,6 +389,9 @@ class Updates:
         its board needs itself (``espflasher.cpp``). Its radio is offline
         while flashing; the AP itself does not reboot.
 
+        The AP flashes several images and reports each from 0 to 100%;
+        progress is reported across all of them, weighted by size.
+
         Raises:
             OEPLUpdateError: If the release has no firmware for *chip*, or the
                 AP reports the flash failed.
@@ -396,6 +408,7 @@ class Updates:
             _RADIO_FAILED,
             on_progress,
             timeout,
+            progress=_RadioProgress(release.asset_sizes),
         )
 
     # ------------------------------------------------------------------
@@ -410,8 +423,15 @@ class Updates:
         failed: tuple[str, ...],
         on_progress: ProgressCallback | None,
         timeout: float,
+        *,
+        progress: Callable[[str], int | None] | None = None,
     ) -> None:
-        """Start a flash and follow the AP's console until it reports an outcome."""
+        """Start a flash and follow the AP's console until it reports an outcome.
+
+        *progress* turns a console line into the percentage to report, if it
+        carries one; by default the AP's own ``Progress: N%`` is reported.
+        """
+        progress = progress or _plain_progress
         if not self._client.connected:
             raise OEPLUpdateError("Following a flash needs a connected client")
         outcome: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
@@ -419,8 +439,8 @@ class Updates:
         def _on_console(line: str) -> None:
             if outcome.done():
                 return
-            if match := _PROGRESS.match(line):
-                _report(on_progress, stage, int(match[1]), line)
+            if (percent := progress(line)) is not None:
+                _report(on_progress, stage, percent, line)
             elif line.startswith(done):
                 outcome.set_result(None)
             elif line.startswith(failed):
@@ -486,6 +506,42 @@ class Updates:
             return json.loads(await self._get_bytes(url))
         except ValueError as err:
             raise OEPLUpdateError(f"{url} is not JSON") from err
+
+
+def _plain_progress(line: str) -> int | None:
+    """The percentage of a ``Progress: N%`` console line."""
+    match = _PROGRESS.match(line)
+    return int(match[1]) if match else None
+
+
+class _RadioProgress:
+    """Progress across the images of a radio flash, weighted by their size.
+
+    The AP lists the images of the manifest it picked, then flashes them in
+    that order, reporting each from 0 to 100%. Images whose size the release
+    does not give count equally.
+    """
+
+    def __init__(self, sizes: dict[str, int]) -> None:
+        self._sizes = sizes
+        self._images: list[str] = []
+        self._current = -1
+
+    def __call__(self, line: str) -> int | None:
+        if match := _RADIO_IMAGE.match(line):
+            self._images.append(match[1])
+            return None
+        if line.startswith(_RADIO_FLASHING):
+            self._current += 1
+            return None
+        percent = _plain_progress(line)
+        if percent is None or not 0 <= self._current < len(self._images):
+            return percent
+        weights = [self._sizes.get(name) or 0 for name in self._images]
+        if not all(weights):
+            weights = [1] * len(self._images)
+        done = sum(weights[: self._current]) + weights[self._current] * percent / 100
+        return int(done * 100 / sum(weights))
 
 
 def _tag_type_version(data: bytes | None) -> int:

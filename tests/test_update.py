@@ -371,3 +371,51 @@ async def test_install_stops_before_flashing_when_files_fail(client):
         with pytest.raises(OEPLUpdateError):
             await client.updates.install(_release(), ENV)
         assert ("POST", aiohttp.client.URL(f"{BASE}/update_ota")) not in m.requests
+
+
+async def test_radio_progress_runs_once_across_its_images(client):
+    """The AP reports each image from 0 to 100%; the bar goes up once, by size."""
+    client._connected = True
+    sizes = {"bootloader_C6.bin": 22176, "partition-table_C6.bin": 3072, "OpenEPaperLink_esp32_C6.bin": 344528}
+    release = Release.from_github(
+        {
+            **_github_release(),
+            "assets": [
+                {"name": name, "size": size, "browser_download_url": f"{DOWNLOAD}/{name}"}
+                for name, size in {**sizes, "firmware_C6.json": 254}.items()
+            ],
+        }
+    )
+    # As a real AP printed it (progress lines thinned out).
+    console = [
+        "C6 flash starting",
+        "downloading /firmware_C6.json",
+        "  bootloader_C6.bin (version 0001)",
+        "downloading /bootloader_C6.bin",
+        "  partition-table_C6.bin (version 0001)",
+        "downloading /partition-table_C6.bin",
+        "  OpenEPaperLink_esp32_C6.bin (version 0024)",
+        "downloading /OpenEPaperLink_esp32_C6.bin",
+        "Connected to ESP32-C6 at 921600 baud",
+        "Flashing /bootloader_C6.bin",
+        "Progress: 100%",
+        "Flash verified",
+        "Flashing /partition-table_C6.bin",
+        "Progress: 100%",
+        "Flash verified",
+        "Flashing /OpenEPaperLink_esp32_C6.bin",
+        "Progress: 0%",
+        "Progress: 50%",
+        "Progress: 100%",
+        "Flash verified",
+        "Finished!",
+    ]
+    progress = []
+    with aioresponses() as m:
+        m.post(f"{BASE}/update_c6", callback=_console(client, *console))
+        await client.updates.update_radio(release, "C6", on_progress=progress.append)
+
+    percents = [p.percent for p in progress]
+    assert percents == sorted(percents)
+    # The bootloader and partition table are 7% of the bytes.
+    assert percents == [0, 5, 6, 6, 53, 100, 100]
