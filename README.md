@@ -476,14 +476,43 @@ await client.update_c6("http://example.com/c6-firmware.bin")
 > **The HTTP response from `update_ota`/`update_c6` comes back almost immediately** — the AP
 > launches a background task and acks ("In progress" / "Ok") before the download or flash actually
 > happens, so these calls do not block for the duration of the update. Progress and completion are
-> reported only over the WebSocket (`wsSerial` log lines ending in a literal `[reboot]` marker for
-> a full reboot) — subscribe to `on_log()` and especially `on_connection_change()` to track when
-> the AP actually finishes and comes back.
+> reported only over the WebSocket (`wsSerial` console lines ending in a literal `[reboot]` marker
+> for a full reboot) — subscribe to `on_console()` and especially `on_connection_change()` to track
+> when the AP actually finishes and comes back, or use `client.updates` below, which does.
 
 > **`rollback()` and `update_c6()` fail with `OEPLResponseError` (HTTP 400)** if there's no
 > rollback image available, or the AP build wasn't compiled with C6/H2 support, respectively.
 > Check `get_sysinfo()`'s `rollback`/`hasC6`/`hasH2` fields (or `client.rollback`/hardware docs)
 > before calling if you want to avoid the round trip.
+
+#### Finding and installing releases
+
+`client.updates` does what the AP's own update page does in the browser: it looks up the GitHub
+releases of the repository the AP is configured with, decides whether one is newer, and installs it
+in the page's order — the web interface files, then the tag types, and the firmware only once every
+file is in place.
+
+```python
+info = await client.get_sysinfo()
+config = await client.get_ap_config()
+repo = config.repo or DEFAULT_REPO
+env = config.env or info.env
+
+release = await client.updates.latest_release(env, repo)       # Release | None
+if release and release.is_update(info.build_version, int(info.build_time)):
+    # Needs a connected client: the outcome is only reported over the WebSocket.
+    await client.updates.install(release, env, repo=repo, on_progress=print)
+
+if chip := info.radio_chip:                                    # "C6", "H2" or None
+    latest = await client.updates.radio_version(release, chip)  # 36, written "0024"
+    if latest and latest > (info.radio_version or 0):
+        await client.updates.update_radio(release, chip)
+```
+
+`install()`, `update_firmware()` and `update_radio()` return once the AP reports success and raise
+`OEPLUpdateError` with the AP's message when it reports a failure. Versions are compared the way the
+page does: firmware reports `3.0` for the release tagged `3.00`, which is the same release. GitHub
+allows 60 unauthenticated API requests an hour, so check for releases sparingly.
 
 #### Live updates via WebSocket
 

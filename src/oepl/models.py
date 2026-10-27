@@ -308,6 +308,28 @@ class APInfo:
     has_flasher: bool = False
     raw: dict[str, Any] = field(repr=False, default_factory=dict)
 
+    @property
+    def radio_chip(self) -> str | None:
+        """The radio co-processor that can be updated: "H2", "C6" or ``None``.
+
+        A board has one or the other (``ota.cpp:handleSysinfoRequest``).
+        """
+        if self.has_h2:
+            return "H2"
+        if self.has_c6:
+            return "C6"
+        return None
+
+    @property
+    def radio_version(self) -> int | None:
+        """The radio's firmware version, ``None`` if it has not reported one.
+
+        Releases write it in hex ("0024" is 36); see
+        :func:`oepl.update.format_radio_version`.
+        """
+        version = _as_int(self.ap_version or None, 0)
+        return version or None
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "APInfo":
         """Parse a /sysinfo dict. Tolerant of missing keys."""

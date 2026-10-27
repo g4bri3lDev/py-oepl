@@ -32,3 +32,7 @@ class OEPLResponseError(OEPLError):
         self.status = status
         self.body = body
         super().__init__(f"AP returned HTTP {status}: {body}")
+
+
+class OEPLUpdateError(OEPLError):
+    """Raised when a firmware update could not be completed."""

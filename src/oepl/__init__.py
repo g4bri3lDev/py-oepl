@@ -18,6 +18,7 @@ from .exceptions import (
     OEPLNotFoundError,
     OEPLResponseError,
     OEPLTimeoutError,
+    OEPLUpdateError,
 )
 from .files import FileEntry, Files
 from .image import decode_image, decode_image_pil
@@ -37,6 +38,17 @@ from .models import (
     build_hostname,
 )
 from .tag_handle import TagHandle
+from .update import (
+    DEFAULT_REPO,
+    Release,
+    ReleaseFile,
+    UpdateProgress,
+    Updates,
+    UpdateStage,
+    format_radio_version,
+    normalize_version,
+    same_version,
+)
 
 # Re-export epaper-dithering types so callers don't need a separate import
 try:
@@ -65,6 +77,16 @@ __all__ = [
     # Files
     "Files",
     "FileEntry",
+    # Updates
+    "Updates",
+    "Release",
+    "ReleaseFile",
+    "UpdateProgress",
+    "UpdateStage",
+    "DEFAULT_REPO",
+    "format_radio_version",
+    "normalize_version",
+    "same_version",
     # Enums
     "APState",
     "RunStatus",
@@ -84,6 +106,7 @@ __all__ = [
     "OEPLTimeoutError",
     "OEPLNotFoundError",
     "OEPLResponseError",
+    "OEPLUpdateError",
     # Image
     "decode_image",
     "decode_image_pil",
