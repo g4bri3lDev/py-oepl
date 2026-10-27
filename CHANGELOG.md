@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.9.2...v0.10.0) (2026-10-27)
+
+
+### Features
+
+* update tag firmware through the AP ([93c39ec](https://github.com/g4bri3lDev/py-oepl/commit/93c39ec26f3089359c71acbedfc376c19a82e38c))
+
 ## [0.9.2](https://github.com/g4bri3lDev/py-oepl/compare/v0.9.1...v0.9.2) (2026-10-27)
 
 
