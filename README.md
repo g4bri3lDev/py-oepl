@@ -516,6 +516,28 @@ if chip := info.radio_chip:                                    # "C6", "H2" or N
 page does: firmware reports `3.0` for the release tagged `3.00`, which is the same release. GitHub
 allows 60 unauthenticated API requests an hour, so check for releases sparingly.
 
+#### Updating tag firmware
+
+Tags get their firmware through the AP, as with the tag's "auto update" button on its web page:
+the image goes onto the AP, the tag is switched to the Firmware content mode, and it fetches the
+image when it next checks in. The AP restores the tag's content settings once it has the image.
+
+```python
+tag = client.tags["0000026C3C223B1E"]
+firmware = await client.updates.tag_firmware(tag)               # newest for its type, or None
+if firmware and firmware.number > tag.firmware_version:
+    await client.updates.update_tag(tag.mac, firmware, on_progress=print)
+
+# Older images stay on the repository, and tags accept them: to go back
+older = await client.updates.tag_firmware_versions(firmware.name)  # oldest first
+await client.updates.update_tag(tag.mac, older[-2])
+```
+
+`update_tag()` reports no progress until the tag checks in, then follows the blocks it fetches, and
+returns once the tag reports the new version. It raises `OEPLUpdateError` if the tag refuses the
+image. Tags are updated one at a time per AP, since the AP holds a queued image in memory; a
+second call waits. **A tag that fails part way can need a tag flasher to recover.**
+
 #### Live updates via WebSocket
 
 ```python
