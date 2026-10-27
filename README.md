@@ -460,7 +460,8 @@ calling one is a commitment, and none of them are exercised against a real AP by
 test suite.**
 
 ```python
-# Flash new AP firmware downloaded (by the AP itself) from a URL, then reboot
+# Flash new AP firmware downloaded (by the AP itself) from a URL. The AP keeps running the old
+# image until it reboots: call reboot_ap() once it reports success (client.updates does)
 await client.update_ota("http://example.com/firmware.bin", md5="deadbeef...", size=1234567)
 
 # Roll back to the previously running firmware image, then reboot
@@ -476,9 +477,10 @@ await client.update_c6("http://example.com/c6-firmware.bin")
 > **The HTTP response from `update_ota`/`update_c6` comes back almost immediately** — the AP
 > launches a background task and acks ("In progress" / "Ok") before the download or flash actually
 > happens, so these calls do not block for the duration of the update. Progress and completion are
-> reported only over the WebSocket (`wsSerial` console lines ending in a literal `[reboot]` marker
-> for a full reboot) — subscribe to `on_console()` and especially `on_connection_change()` to track
-> when the AP actually finishes and comes back, or use `client.updates` below, which does.
+> reported only over the WebSocket (`wsSerial` console lines ending in a literal `[reboot]` marker)
+> — subscribe to `on_console()` to track it, or use `client.updates` below, which does. The AP does
+> **not** restart by itself after a flash: `[reboot]` is a prompt, which its web page shows as a
+> Reboot button.
 
 > **`rollback()` and `update_c6()` fail with `OEPLResponseError` (HTTP 400)** if there's no
 > rollback image available, or the AP build wasn't compiled with C6/H2 support, respectively.

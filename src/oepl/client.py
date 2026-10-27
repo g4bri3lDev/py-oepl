@@ -997,18 +997,20 @@ class OEPLClient:
     # ------------------------------------------------------------------
 
     async def update_ota(self, url: str, md5: str, size: int) -> None:
-        """Flash new AP firmware downloaded from *url*, then reboot. **DESTRUCTIVE.**
+        """Flash new AP firmware downloaded from *url*. **DESTRUCTIVE.**
 
         POSTs to ``/update_ota`` (``handleUpdateOTA``, ``ota.cpp:195``). The
         HTTP response ("In progress") comes back almost immediately — the AP
         launches a background FreeRTOS task (``firmwareUpdateTask``) that
-        downloads *url*, verifies it against *md5*/*size*, writes it via the
-        ``Update`` library, and reboots; this call does **not** block for
-        that duration. Progress and completion are reported only over the
+        downloads *url*, verifies it against *md5*/*size* and writes it via
+        the ``Update`` library; this call does **not** block for that
+        duration. Progress and completion are reported only over the
         WebSocket (``wsSerial`` console lines, ending in ``"Reboot system now"``
-        + a literal ``[reboot]`` marker) — use :meth:`on_console` and especially
-        :meth:`on_connection_change` to track when the AP actually comes back.
-        :meth:`~oepl.update.Updates.update_firmware` does that for you.
+        + a literal ``[reboot]`` marker) — use :meth:`on_console`.
+
+        The AP does **not** restart by itself: it keeps running the old image
+        until :meth:`reboot_ap`. :meth:`~oepl.update.Updates.update_firmware`
+        follows the console and reboots it for you.
 
         Args:
             url: HTTP(S) URL the AP itself will download the firmware image
@@ -1033,15 +1035,20 @@ class OEPLClient:
         succeeds if the AP has a rollback image available
         (``Update.canRollBack()``); otherwise the AP responds ``400``
         ("Rollback not allowed" / "Rollback failed"), surfaced here as
-        :class:`~oepl.exceptions.OEPLResponseError`. On success the AP waits
-        ~1s in-line then reboots — use :meth:`on_connection_change` to track
-        it.
+        :class:`~oepl.exceptions.OEPLResponseError`.
+
+        Switching the image does not restart the AP: the firmware prints
+        "Reboot system now" and a ``[reboot]`` marker, which its web page
+        renders as a button, and waits (``ota.cpp:handleRollback``). This
+        method reboots it, as that button does — use
+        :meth:`on_connection_change` to track it coming back.
 
         Raises:
             OEPLResponseError: If no rollback image is available, or the
                 rollback itself fails.
         """
         await self._http.post_form("rollback", {})
+        await self.reboot_ap()
 
     async def run_update_actions(self) -> None:
         """Run post-update cleanup steps from ``/update_actions.json``. **Deletes files.**
