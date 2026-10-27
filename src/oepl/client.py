@@ -30,6 +30,7 @@ from .models import (
     WifiConfig,
 )
 from .tag_handle import TagHandle
+from .update import Updates
 from .websocket import _WebSocketHandler
 
 try:
@@ -62,6 +63,8 @@ class OEPLClient:
         files: :class:`~oepl.files.Files` — browse/read/write/delete files on
             the AP's LittleFS content filesystem (``/edit``, ``/check_file``,
             ``/littlefs_put``).
+        updates: :class:`~oepl.update.Updates` — find and install firmware
+            releases the way the AP's own update page does.
 
     Args:
         host: Hostname or IP address of the AP (without scheme).
@@ -86,6 +89,7 @@ class OEPLClient:
         self._session: aiohttp.ClientSession | None = session
         self._http = _HTTPClient(host, lambda: self.session)
         self.files = Files(self._http)
+        self.updates = Updates(self)
         self._ws_handler = _WebSocketHandler(self, reconnect_interval)
         self._ws_task: asyncio.Task[None] | None = None
         self._connected = False
@@ -1001,9 +1005,10 @@ class OEPLClient:
         downloads *url*, verifies it against *md5*/*size*, writes it via the
         ``Update`` library, and reboots; this call does **not** block for
         that duration. Progress and completion are reported only over the
-        WebSocket (``wsSerial`` log lines, ending in ``"Reboot system now"``
-        + a literal ``[reboot]`` marker) — use :meth:`on_log` and especially
+        WebSocket (``wsSerial`` console lines, ending in ``"Reboot system now"``
+        + a literal ``[reboot]`` marker) — use :meth:`on_console` and especially
         :meth:`on_connection_change` to track when the AP actually comes back.
+        :meth:`~oepl.update.Updates.update_firmware` does that for you.
 
         Args:
             url: HTTP(S) URL the AP itself will download the firmware image
@@ -1065,7 +1070,8 @@ class OEPLClient:
         ("Ok") returns quickly once the flashing task launches; the AP then
         stops its serial task, flashes the sub-radio over the shared UART,
         and reinitializes it, coming back online without necessarily
-        rebooting the whole AP. Track completion via :meth:`on_log`.
+        rebooting the whole AP. Track completion via :meth:`on_console`, or use
+        :meth:`~oepl.update.Updates.update_radio`, which does.
 
         Args:
             url: HTTP(S) URL the AP will download the sub-radio firmware
