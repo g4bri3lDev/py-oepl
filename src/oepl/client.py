@@ -28,6 +28,7 @@ from .models import (
     TagType,
     UploadProgress,
     WifiConfig,
+    format_hw_type,
 )
 from .tag_handle import TagHandle
 from .update import Updates
@@ -579,10 +580,7 @@ class OEPLClient:
         """
         if use_cache and hw_type in self._tag_type_cache:
             return self._tag_type_cache[hw_type]
-        # Types above 0xFF are ones the AP assigns itself, and their files are
-        # named with four hex digits rather than two (tag_db.cpp:471, getHwType).
-        digits = 4 if hw_type > 0xFF else 2
-        data = await self._http.get_raw(f"tagtypes/{hw_type:0{digits}X}.json")
+        data = await self._http.get_raw(f"tagtypes/{format_hw_type(hw_type)}.json")
         result = TagType.from_dict(hw_type, json.loads(data)) if data is not None else None
         self._tag_type_cache[hw_type] = result
         return result

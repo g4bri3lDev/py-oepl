@@ -20,6 +20,8 @@ from oepl.models import (
     WifiConfig,
     ap_display_mac,
     build_hostname,
+    format_hw_type,
+    format_tag_firmware_version,
 )
 
 
@@ -697,3 +699,14 @@ def test_tag_is_ap_display() -> None:
     assert display.is_ap_display("EC:DA:3B:8D:59:84")
     assert not other.is_ap_display("EC:DA:3B:8D:59:84")
     assert not display.is_ap_display("")
+
+
+@pytest.mark.parametrize(("hw_type", "text"), [(0x01, "01"), (0xE0, "E0"), (0xFF, "FF"), (0x103, "0103")])
+def test_format_hw_type_as_the_ap_names_its_tag_type_files(hw_type: int, text: str) -> None:
+    assert format_hw_type(hw_type) == text
+
+
+def test_format_tag_firmware_version_as_its_images_name_it() -> None:
+    # Seen on real tags: they report 41 for the image SOL_M2_29_SSD_0029.bin.
+    assert format_tag_firmware_version(41) == "0029"
+    assert format_tag_firmware_version(0x2B) == "002B"

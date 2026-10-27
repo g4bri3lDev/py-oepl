@@ -36,6 +36,8 @@ from .models import (
     WifiNetwork,
     ap_display_mac,
     build_hostname,
+    format_hw_type,
+    format_tag_firmware_version,
 )
 from .tag_handle import TagHandle
 from .update import (
@@ -73,6 +75,8 @@ __all__ = [
     "WifiConfig",
     "ap_display_mac",
     "build_hostname",
+    "format_hw_type",
+    "format_tag_firmware_version",
     "WifiNetwork",
     "SSIDList",
     # Files

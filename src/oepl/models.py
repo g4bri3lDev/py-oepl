@@ -793,6 +793,25 @@ def build_hostname(mac: str, alias: str = "") -> str:
     return f"OpenEpaperLink-{digits[-4:].upper()}" if len(digits) >= 4 else ""
 
 
+def format_hw_type(hw_type: int) -> str:
+    """Format a tag hardware type as the AP writes it: ``"01"``, or ``"0103"``.
+
+    Types above 0xFF are ones the AP assigns itself and get four hex digits
+    (``tag_db.cpp:471``, ``getHwType``). The AP names its tag type files this
+    way (``/tagtypes/01.json``), and so does the tag firmware list.
+    """
+    return f"{hw_type:0{4 if hw_type > 0xFF else 2}X}"
+
+
+def format_tag_firmware_version(version: int) -> str:
+    """Format a tag's firmware version as its images name it: 41 is ``"0029"``.
+
+    Tags report the version as a number (:attr:`Tag.firmware_version`); the
+    firmware images carry it in hex (``SOL_M2_29_SSD_0029.bin``).
+    """
+    return f"{version:04X}"
+
+
 def ap_display_mac(mac: str) -> str:
     """Return the tag MAC an AP with this MAC gives its own built-in display.
 
