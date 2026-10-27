@@ -19,12 +19,18 @@ separately, as on the page.
 Progress and the outcome of a flash are only reported as console lines over
 the WebSocket (``wsSerial``, ``web.cpp:293``), so :meth:`Updates.update_firmware`
 and :meth:`Updates.update_radio` need a connected client.
+
+Tags are updated through the AP too (``main.js``, the tag's "auto update"
+button): their firmware lives on the repository's master branch, listed in
+``binaries/Tag/tagotaversions.json``, and the AP hands it to the tag when it
+next checks in. See :meth:`Updates.update_tag`.
 """
 
 from __future__ import annotations
 
 import asyncio
 import enum
+import hashlib
 import json
 import re
 from collections.abc import Awaitable, Callable
@@ -35,6 +41,7 @@ from urllib.parse import quote
 
 import aiohttp
 
+from .enums import ContentMode, WakeupReason
 from .exceptions import (
     OEPLConnectionError,
     OEPLError,
@@ -46,6 +53,7 @@ from .exceptions import (
 
 if TYPE_CHECKING:
     from .client import OEPLClient
+    from .models import Tag, UploadProgress
 
 DEFAULT_REPO = "OpenEPaperLink/OpenEPaperLink"
 
@@ -54,9 +62,13 @@ _TAG_TYPE_URL = "https://raw.githubusercontent.com/{repo}/master/resources/tagty
 # Firmware from before /github_proxy downloads over http only, and the page
 # sends it its firmware through this proxy (ota.js:updateESP).
 _LEGACY_PROXY = "http://openepaperlink.eu/getupdate/?url="
+_TAG_FIRMWARE_URL = "https://raw.githubusercontent.com/{repo}/master/binaries/Tag/{name}"
+_TAG_FIRMWARE_DIR_URL = "https://api.github.com/repos/{repo}/contents/binaries/Tag"
 
 _GITHUB_TIMEOUT = aiohttp.ClientTimeout(total=30)
 _FLASH_TIMEOUT = 600.0
+# A tag only fetches its update when it next checks in, which can be a while.
+_TAG_UPDATE_TIMEOUT = 2 * 60 * 60.0
 # The page treats a release published up to this long before the running
 # build as that build (ota.js:initUpdate): CI publishes after building.
 _BUILD_GRACE_SECONDS = 30 * 60
@@ -82,6 +94,7 @@ class UpdateStage(enum.Enum):
     TAG_TYPES = "tag_types"
     FIRMWARE = "firmware"
     RADIO = "radio"
+    TAG = "tag"
 
 
 @dataclass(frozen=True)
@@ -144,6 +157,28 @@ class ReleaseFile:
 
 
 @dataclass(frozen=True)
+class TagFirmware:
+    """A firmware image for a tag, from ``binaries/Tag`` on the repository."""
+
+    # The firmware, as tagotaversions.json names it ("SOL_M2_29_UC").
+    name: str
+    # Its version as written in the file name: "0029", or "19" for old ones.
+    version: str
+    # Known for the image tagotaversions.json lists; checked when known.
+    md5: str = ""
+
+    @property
+    def number(self) -> int:
+        """The version as the tag reports it (``Tag.firmware_version``)."""
+        return int(self.version, 16)
+
+    @property
+    def file_name(self) -> str:
+        """The image's file name, on the repository and on the AP."""
+        return f"{self.name}_{self.version}.bin"
+
+
+@dataclass(frozen=True)
 class Release:
     """A GitHub release of the AP firmware."""
 
@@ -202,6 +237,9 @@ class Updates:
 
     def __init__(self, client: OEPLClient) -> None:
         self._client = client
+        # A queued tag update is held in the AP's memory whole (up to 64 KB,
+        # newproto.cpp:prepareDataAvail), so tags are updated one at a time.
+        self._tag_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # Finding an update
@@ -412,6 +450,139 @@ class Updates:
         )
 
     # ------------------------------------------------------------------
+    # Tags
+    # ------------------------------------------------------------------
+
+    async def tag_firmware(self, tag: Tag, repo: str = DEFAULT_REPO) -> TagFirmware | None:
+        """Return the newest firmware *repo* has for *tag*, ``None`` if none.
+
+        Looked up by hardware type in ``tagotaversions.json``. Chroma tags of
+        one hardware type come in variants, told apart by bits of their MAC,
+        each with its own firmware (``main.js``, ``#cfgautoupdate``).
+        """
+        url = _TAG_FIRMWARE_URL.format(repo=repo, name="tagotaversions.json")
+        try:
+            entry = (await self._get_json(url))[0].get(_hw_type_key(tag.hw_type))
+        except (IndexError, KeyError, TypeError, AttributeError) as err:
+            raise OEPLUpdateError(f"Unexpected tag firmware list at {url}") from err
+        if not entry or not entry.get("type"):
+            return None
+        suffix = ""
+        if str(entry["type"]).startswith("chroma"):
+            variant = int(tag.mac[4:6], 16) >> 5
+            if variant:
+                suffix = f"_{variant}"
+        name, version = entry.get("type" + suffix), entry.get("version" + suffix)
+        if not name or not version:
+            return None
+        return TagFirmware(str(name), str(version), str(entry.get("md5" + suffix) or ""))
+
+    async def tag_firmware_versions(self, name: str, repo: str = DEFAULT_REPO) -> list[TagFirmware]:
+        """Return every image of firmware *name* on *repo*, oldest first.
+
+        Older ones are kept alongside the newest, so a tag can be taken back
+        to one: tags check that an image is firmware for them, not that it is
+        newer (``Tag_FW_ZBS243``, ``validateFWMagic``). Very old images may
+        predate that check and be refused.
+        """
+        listing = await self._get_json(_TAG_FIRMWARE_DIR_URL.format(repo=repo))
+        pattern = re.compile(rf"^{re.escape(name)}_([0-9A-Fa-f]+)\.bin$")
+        found = [
+            TagFirmware(name, match[1])
+            for entry in listing
+            if isinstance(entry, dict) and (match := pattern.match(str(entry.get("name", ""))))
+        ]
+        return sorted(found, key=lambda firmware: firmware.number)
+
+    async def update_tag(
+        self,
+        mac: str,
+        firmware: TagFirmware,
+        *,
+        repo: str = DEFAULT_REPO,
+        on_progress: ProgressCallback | None = None,
+        timeout: float = _TAG_UPDATE_TIMEOUT,
+    ) -> None:
+        """Have tag *mac* install *firmware*. **A failed update can brick a tag.**
+
+        Puts the image on the AP (unless it already has it) and switches the
+        tag to the Firmware content mode, as the tag's "auto update" button
+        does. The AP keeps the tag's content configuration and restores it
+        once the image is delivered (``web.cpp``, ``pushTagInfo``). The tag
+        fetches the image when it next checks in, flashes it and restarts.
+
+        Progress is ``None`` until the tag starts fetching, then follows the
+        blocks it fetches. Returns once the tag reports *firmware*'s version.
+        One tag is updated at a time per AP; a second call waits.
+
+        Raises:
+            OEPLUpdateError: If the image cannot be put on the AP, or the tag
+                refuses it (``WakeupReason.FAILED_OTA``).
+            OEPLTimeoutError: If the tag does not report the new version
+                within *timeout*.
+        """
+        if not self._client.connected:
+            raise OEPLUpdateError("Following a tag update needs a connected client")
+        mac = mac.upper()
+        stage = UpdateStage.TAG
+        async with self._tag_lock:
+            _report(on_progress, stage, None, "Putting the firmware on the AP")
+            path = "/" + firmware.file_name
+            await self._stage_tag_firmware(path, firmware, repo)
+
+            outcome: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
+            known = self._client.tags.get(mac)
+            seen_before = known.last_seen if known else 0
+            highest = -1
+
+            def _on_tag(tag: Tag) -> None:
+                # Only what the tag reports after this update was queued.
+                if outcome.done() or tag.last_seen <= seen_before:
+                    return
+                if tag.wakeup_reason == WakeupReason.FAILED_OTA:
+                    outcome.set_result(f"Tag {mac} refused {firmware.file_name}")
+                elif tag.firmware_version == firmware.number:
+                    outcome.set_result(None)
+
+            def _on_upload(progress: UploadProgress) -> None:
+                nonlocal highest
+                if outcome.done() or progress.src.upper() != mac or not progress.total:
+                    return
+                # A tag that loses a block asks for it again; never go back.
+                percent = progress.current * 100 // progress.total
+                if percent > highest:
+                    highest = percent
+                    _report(on_progress, stage, percent, f"Block {progress.current} of {progress.total}")
+
+            unsubscribe_tag = self._client.on_tag_update(_on_tag, mac=mac)
+            unsubscribe_upload = self._client.on_upload_progress(_on_upload)
+            try:
+                await self._client.save_tag_config(
+                    mac, content_mode=ContentMode.FIRMWARE, mode_cfg_json={"filename": path}
+                )
+                _report(on_progress, stage, None, "Waiting for the tag to check in")
+                try:
+                    error = await asyncio.wait_for(outcome, timeout)
+                except TimeoutError as err:
+                    raise OEPLTimeoutError(f"Tag {mac} did not report {firmware.file_name} installed") from err
+            finally:
+                unsubscribe_tag()
+                unsubscribe_upload()
+        if error is not None:
+            raise OEPLUpdateError(error)
+        _report(on_progress, stage, 100)
+
+    async def _stage_tag_firmware(self, path: str, firmware: TagFirmware, repo: str) -> None:
+        """Put *firmware* on the AP at *path*, unless it already has it."""
+        current = await self._client.files.check(path)
+        if current and (not firmware.md5 or current["md5"] == firmware.md5):
+            return
+        data = await self._get_bytes(_TAG_FIRMWARE_URL.format(repo=repo, name=firmware.file_name))
+        if firmware.md5 and hashlib.md5(data).hexdigest() != firmware.md5:
+            raise OEPLUpdateError(f"{firmware.file_name} does not match its MD5")
+        await self._client.files.upload(path, data)
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
@@ -508,6 +679,11 @@ class Updates:
             raise OEPLUpdateError(f"{url} is not JSON") from err
 
 
+def _hw_type_key(hw_type: int) -> str:
+    """A hardware type as tagotaversions.json keys it ("01", or "0103")."""
+    return f"{hw_type:0{4 if hw_type > 0xFF else 2}X}"
+
+
 def _plain_progress(line: str) -> int | None:
     """The percentage of a ``Progress: N%`` console line."""
     match = _PROGRESS.match(line)
@@ -563,6 +739,7 @@ __all__ = [
     "DEFAULT_REPO",
     "Release",
     "ReleaseFile",
+    "TagFirmware",
     "UpdateProgress",
     "UpdateStage",
     "Updates",

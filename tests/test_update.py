@@ -1,5 +1,7 @@
 """Tests for the Updates namespace (client.updates). Mock-only: these flash a real AP."""
 
+import asyncio
+import hashlib
 import json
 from datetime import UTC, datetime
 
@@ -7,11 +9,12 @@ import aiohttp
 import pytest
 from aioresponses import CallbackResult, aioresponses
 
-from oepl import APInfo
+from oepl import APInfo, Tag, UploadProgress
 from oepl.client import OEPLClient
 from oepl.exceptions import OEPLTimeoutError, OEPLUpdateError
 from oepl.update import (
     Release,
+    TagFirmware,
     UpdateStage,
     format_radio_version,
     normalize_version,
@@ -419,3 +422,181 @@ async def test_radio_progress_runs_once_across_its_images(client):
     assert percents == sorted(percents)
     # The bootloader and partition table are 7% of the bytes.
     assert percents == [0, 5, 6, 6, 53, 100, 100]
+
+
+# ---------------------------------------------------------------------------
+# Tags
+# ---------------------------------------------------------------------------
+
+TAG_MAC = "6400000000000006"
+TAG_VERSIONS = f"{RAW}/master/binaries/Tag/tagotaversions.json"
+TAG_IMAGE = f"{RAW}/master/binaries/Tag/SOL_M2_29_UC_0029.bin"
+IMAGE = b"firmware image"
+IMAGE_MD5 = hashlib.md5(IMAGE).hexdigest()
+
+
+def _tag(mac=TAG_MAC, **fields):
+    return Tag.from_dict({"mac": mac, "hwType": 0x11, "lastseen": 1000, "ver": 0x27, **fields})
+
+
+def _tag_versions(**extra):
+    return json.dumps(
+        [
+            {
+                "11": {"type": "SOL_M2_29_UC", "version": "0029", "md5": IMAGE_MD5},
+                "2F": {
+                    "type": "chroma29_8151",
+                    "version": "0015",
+                    "md5": "a",
+                    "type_1": "chroma29_8151_B",
+                    "version_1": "0016",
+                    "md5_1": "b",
+                },
+                **extra,
+            }
+        ]
+    )
+
+
+async def test_tag_firmware_by_hardware_type(client):
+    with aioresponses() as m:
+        m.get(TAG_VERSIONS, body=_tag_versions(), repeat=True)
+        firmware = await client.updates.tag_firmware(_tag())
+        assert await client.updates.tag_firmware(_tag(hwType=0xE0)) is None
+    assert firmware == TagFirmware("SOL_M2_29_UC", "0029", IMAGE_MD5)
+    assert firmware.number == 0x29
+    assert firmware.file_name == "SOL_M2_29_UC_0029.bin"
+
+
+async def test_chroma_tags_pick_their_variant_from_the_mac(client):
+    with aioresponses() as m:
+        m.get(TAG_VERSIONS, body=_tag_versions(), repeat=True)
+        plain = await client.updates.tag_firmware(_tag("00001F0000000001", hwType=0x2F))
+        # 0x3F >> 5 is variant 1.
+        variant = await client.updates.tag_firmware(_tag("00003F0000000001", hwType=0x2F))
+    assert (plain.name, plain.version) == ("chroma29_8151", "0015")
+    assert (variant.name, variant.version, variant.md5) == ("chroma29_8151_B", "0016", "b")
+
+
+async def test_tag_firmware_versions_include_old_names(client):
+    listing = [
+        {"name": n}
+        for n in ("SOL_M2_29_UC_0029.bin", "SOL_M2_29_UC_19.bin", "SOL_M2_29_UC_0027.bin", "SOL_M2_29_SSD_0029.bin")
+    ]
+    with aioresponses() as m:
+        m.get(f"https://api.github.com/repos/{REPO}/contents/binaries/Tag", payload=listing)
+        versions = await client.updates.tag_firmware_versions("SOL_M2_29_UC")
+    assert [v.version for v in versions] == ["19", "0027", "0029"]
+
+
+def _tag_events(client, *events):
+    """A save_cfg callback that has the AP report *events* afterwards."""
+
+    def callback(url, **kwargs):
+        loop = asyncio.get_running_loop()
+        for delay, event in enumerate(events, 1):
+            fire = client._fire_tag_update if isinstance(event, Tag) else client._fire_upload_progress
+            loop.call_later(delay * 0.001, fire, event)
+        return CallbackResult(body="Ok")
+
+    return callback
+
+
+async def test_update_tag_stages_the_image_and_follows_the_tag(client):
+    client._connected = True
+    client._tags[TAG_MAC] = _tag()
+    progress = []
+    with aioresponses() as m:
+        m.get(f"{BASE}/check_file?path=/SOL_M2_29_UC_0029.bin", payload={"filesize": 0, "md5": ""})
+        m.get(TAG_IMAGE, body=IMAGE)
+        m.post(f"{BASE}/littlefs_put", body="Ok")
+        m.post(
+            f"{BASE}/save_cfg",
+            callback=_tag_events(
+                client,
+                # A check-in from before the update was queued does not count.
+                _tag(lastseen=1000, ver=0x29),
+                UploadProgress(src=TAG_MAC, current=1, total=4),
+                UploadProgress(src=TAG_MAC, current=3, total=4),
+                # A block asked for again does not move the progress back.
+                UploadProgress(src=TAG_MAC, current=2, total=4),
+                UploadProgress(src="00000000000000AA", current=4, total=4),
+                UploadProgress(src=TAG_MAC, current=4, total=4),
+                _tag(lastseen=2000, ver=0x29, wakeupReason=0xFC),
+            ),
+        )
+        await client.updates.update_tag(
+            TAG_MAC, TagFirmware("SOL_M2_29_UC", "0029", IMAGE_MD5), on_progress=progress.append
+        )
+
+    assert _uploads(m) == {"/SOL_M2_29_UC_0029.bin": IMAGE}
+    ((_args, kwargs),) = m.requests[("POST", aiohttp.client.URL(f"{BASE}/save_cfg"))]
+    assert kwargs["data"] == {
+        "mac": TAG_MAC,
+        "contentmode": "5",
+        "modecfgjson": '{"filename": "/SOL_M2_29_UC_0029.bin"}',
+    }
+    assert [p.percent for p in progress] == [None, None, 25, 75, 100, 100]
+    assert {p.stage for p in progress} == {UpdateStage.TAG}
+
+
+async def test_update_tag_reuses_an_image_the_ap_has(client):
+    client._connected = True
+    client._tags[TAG_MAC] = _tag()
+    with aioresponses() as m:
+        m.get(f"{BASE}/check_file?path=/SOL_M2_29_UC_0029.bin", payload={"filesize": 14, "md5": IMAGE_MD5})
+        m.post(f"{BASE}/save_cfg", callback=_tag_events(client, _tag(lastseen=2000, ver=0x29)))
+        await client.updates.update_tag(TAG_MAC, TagFirmware("SOL_M2_29_UC", "0029", IMAGE_MD5))
+    assert _uploads(m) == {}
+
+
+async def test_a_tag_refusing_the_image_raises(client):
+    client._connected = True
+    client._tags[TAG_MAC] = _tag()
+    with aioresponses() as m:
+        m.get(f"{BASE}/check_file?path=/SOL_M2_29_UC_19.bin", payload={"filesize": 9, "md5": "x"})
+        m.post(f"{BASE}/save_cfg", callback=_tag_events(client, _tag(lastseen=2000, wakeupReason=0xE0)))
+        with pytest.raises(OEPLUpdateError, match="refused"):
+            await client.updates.update_tag(TAG_MAC, TagFirmware("SOL_M2_29_UC", "19"))
+
+
+async def test_an_image_that_fails_its_md5_is_not_staged(client):
+    client._connected = True
+    with aioresponses() as m:
+        m.get(f"{BASE}/check_file?path=/SOL_M2_29_UC_0029.bin", payload={"filesize": 0, "md5": ""})
+        m.get(TAG_IMAGE, body=b"truncated")
+        with pytest.raises(OEPLUpdateError, match="MD5"):
+            await client.updates.update_tag(TAG_MAC, TagFirmware("SOL_M2_29_UC", "0029", IMAGE_MD5))
+    assert _uploads(m) == {}
+    assert ("POST", aiohttp.client.URL(f"{BASE}/save_cfg")) not in m.requests
+
+
+async def test_a_tag_that_never_reports_times_out(client):
+    client._connected = True
+    with aioresponses() as m:
+        m.get(f"{BASE}/check_file?path=/SOL_M2_29_UC_0029.bin", payload={"filesize": 14, "md5": IMAGE_MD5})
+        m.post(f"{BASE}/save_cfg", body="Ok")
+        with pytest.raises(OEPLTimeoutError):
+            await client.updates.update_tag(TAG_MAC, TagFirmware("SOL_M2_29_UC", "0029", IMAGE_MD5), timeout=0.01)
+
+
+async def test_tags_are_updated_one_at_a_time(client):
+    client._connected = True
+    other = "6400000000000007"
+    client._tags.update({TAG_MAC: _tag(), other: _tag(other)})
+    order = []
+    firmware = TagFirmware("SOL_M2_29_UC", "0029", IMAGE_MD5)
+
+    def save_cfg(url, data, **kwargs):
+        mac = data["mac"]
+        order.append(f"start {mac}")
+        asyncio.get_running_loop().call_later(
+            0.01, lambda: (order.append(f"done {mac}"), client._fire_tag_update(_tag(mac, lastseen=2000, ver=0x29)))
+        )
+        return CallbackResult(body="Ok")
+
+    with aioresponses() as m:
+        m.get(f"{BASE}/check_file?path=/SOL_M2_29_UC_0029.bin", payload={"filesize": 14, "md5": IMAGE_MD5}, repeat=True)
+        m.post(f"{BASE}/save_cfg", callback=save_cfg, repeat=True)
+        await asyncio.gather(client.updates.update_tag(TAG_MAC, firmware), client.updates.update_tag(other, firmware))
+    assert order == [f"start {TAG_MAC}", f"done {TAG_MAC}", f"start {other}", f"done {other}"]
