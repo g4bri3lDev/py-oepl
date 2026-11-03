@@ -852,6 +852,25 @@ def format_hw_type(hw_type: int) -> str:
     return f"{hw_type:0{4 if hw_type > 0xFF else 2}X}"
 
 
+def bluetooth_address(mac: str) -> str:
+    """Return the Bluetooth address of a tag the AP reaches over Bluetooth.
+
+    The AP gives such a tag an eight-byte MAC that ends in its six-byte
+    Bluetooth address (``ble_filter.cpp``, ``src[0..5]``): ``FDFFFBFA6C05D611``
+    is ``FB:FA:6C:05:D6:11``. The first two bytes vary with the firmware, so
+    they say nothing reliable about whether a tag is reached over Bluetooth;
+    for a tag reached over the radio, the result is no Bluetooth address.
+
+    Args:
+        mac: The tag's MAC as the AP reports it.
+
+    Returns:
+        The address in uppercase, colon separated.
+    """
+    digits = mac.replace(":", "").upper()[-12:]
+    return ":".join(digits[i : i + 2] for i in range(0, 12, 2))
+
+
 def format_tag_firmware_version(version: int) -> str:
     """Format a tag's firmware version as its images name it: 41 is ``"0029"``.
 
