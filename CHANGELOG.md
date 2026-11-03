@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.11.0...v0.12.0) (2026-11-03)
+
+
+### Features
+
+* give the Bluetooth address of a tag the AP reaches over Bluetooth ([3bd1adb](https://github.com/g4bri3lDev/py-oepl/commit/3bd1adbbcd33c9ecd577f5b2c1ce0c86a16cb165))
+
 ## [0.11.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.10.0...v0.11.0) (2026-10-27)
 
 
