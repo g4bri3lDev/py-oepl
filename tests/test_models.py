@@ -19,6 +19,7 @@ from oepl.models import (
     TagType,
     WifiConfig,
     ap_display_mac,
+    bluetooth_address,
     build_hostname,
     format_hw_type,
     format_tag_firmware_version,
@@ -742,3 +743,17 @@ def test_format_tag_firmware_version_as_its_images_name_it() -> None:
 def test_guess_manufacturer_from_the_tag_type_name(name: str, maker: str | None) -> None:
     assert guess_manufacturer(name) == maker
     assert TagType(type_id=0, width=1, height=1, name=name).manufacturer == maker
+
+
+@pytest.mark.parametrize(
+    ("mac", "address"),
+    [
+        # As upstream firmware 3.0 reports two real ATC tags.
+        ("FDFFFBFA6C05D611", "FB:FA:6C:05:D6:11"),
+        ("6A13326FAD164840", "32:6F:AD:16:48:40"),
+        # Newer firmware puts the company id in front.
+        ("1337fbfa7c04d611", "FB:FA:7C:04:D6:11"),
+    ],
+)
+def test_bluetooth_address_of_a_tag_the_ap_reaches_over_bluetooth(mac: str, address: str) -> None:
+    assert bluetooth_address(mac) == address
