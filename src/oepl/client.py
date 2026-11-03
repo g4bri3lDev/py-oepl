@@ -36,10 +36,13 @@ from .websocket import _WebSocketHandler
 
 try:
     from epaper_dithering import ColorScheme, DitherMode, dither_image
+
+    from .dithering import dither_for_tag
 except ImportError:
     DitherMode = None  # type: ignore[assignment,misc]
     ColorScheme = None  # type: ignore[assignment,misc]
     dither_image = None  # type: ignore[assignment]
+    dither_for_tag = None  # type: ignore[assignment]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -319,6 +322,7 @@ class OEPLClient:
         *,
         dither_mode: "DitherMode | None" = None,
         color_scheme: "ColorScheme | None" = None,
+        tag_type: TagType | None = None,
         dither: int | None = None,
         ttl: int = 0,
         content_mode: int = 24,
@@ -360,6 +364,10 @@ class OEPLClient:
                 ``DitherMode.FLOYD_STEINBERG`` when *epaper-dithering* is
                 installed, or no dithering if not installed. Only applies to
                 PIL image input.
+            tag_type: The tag's type. When given, client-side dithering is
+                against the colours its panel really shows, as
+                :func:`oepl.dithering.dither_for_tag` does, and
+                *color_scheme* is ignored.
             color_scheme: Color scheme for dithering. Defaults to
                 ``ColorScheme.BWR`` when *epaper-dithering* is installed. Only
                 applies to PIL image input.
@@ -418,7 +426,10 @@ class OEPLClient:
                 _dm = dither_mode if dither_mode is not None else DitherMode.FLOYD_STEINBERG
                 _cs = color_scheme if color_scheme is not None else ColorScheme.BWR
                 if _dm != DitherMode.NONE:
-                    image = dither_image(image, _cs, mode=_dm)
+                    if tag_type is not None:
+                        image = dither_for_tag(image, tag_type, _dm)
+                    else:
+                        image = dither_image(image, _cs, mode=_dm)
                     client_dithered = True
             buf = io.BytesIO()
             image.convert("RGB").save(buf, format="JPEG", quality=100, subsampling=0)

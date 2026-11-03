@@ -949,3 +949,41 @@ async def test_get_tag_type_uses_the_firmware_file_name(client, hw_type, filenam
 
     assert tag_type is not None
     assert tag_type.width == 296
+
+
+@pytest.mark.asyncio
+async def test_upload_image_dithers_for_the_tag_type(client):
+    """With a tag type, the panel's real colours are dithered for and the colortable's sent."""
+    import io
+
+    from PIL import Image
+
+    from oepl.models import TagType
+
+    pytest.importorskip("oepl.dithering")
+    tag_type = TagType.from_dict(
+        0x4C,
+        {
+            "width": 8,
+            "height": 8,
+            "colortable": {
+                "white": [255, 255, 255],
+                "black": [0, 0, 0],
+                "red": [255, 0, 0],
+                "yellow": [255, 255, 0],
+            },
+            "perceptual": {"yellow": [200, 200, 0]},
+        },
+    )
+
+    with aioresponses() as m:
+        m.post(f"{BASE}/imgupload", status=200, body=b"")
+        await client.upload_image("AABBCCDDEEFF", Image.new("RGB", (8, 8), (200, 200, 0)), tag_type=tag_type)
+
+        _args, kwargs = _get_upload_call(m)
+        text_fields, file_parts = _parse_multipart(kwargs["data"], kwargs["headers"]["Content-Type"])
+
+    assert text_fields["dither"] == b"0"
+    sent = Image.open(io.BytesIO(file_parts["image"])).convert("RGB")
+    # JPEG, so near rather than exact: every pixel is the colortable's yellow.
+    assert all(r > 240 and g > 240 and b < 15 for r, g, b in sent.getdata())

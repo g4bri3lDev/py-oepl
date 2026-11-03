@@ -128,7 +128,7 @@ def _decode_esl_raw(data: bytes, tag_type: TagType) -> bytes:
 
 
 def _bitmap_to_image(data: bytes, tag_type: TagType) -> Image.Image:
-    """Convert a flat bitmap to a PIL Image using the tag's color table."""
+    """Convert a flat bitmap to a PIL Image, in the colours the panel shows."""
     native_width = tag_type.width
     native_height = tag_type.height
     if tag_type.rotatebuffer % 2:
@@ -138,7 +138,7 @@ def _bitmap_to_image(data: bytes, tag_type: TagType) -> Image.Image:
     pixels = img.load()
     assert pixels is not None
 
-    color_table = {k: tuple(v) for k, v in tag_type.color_table.items()}
+    color_table = {k: tuple(v) for k, v in tag_type.display_colors.items()}
 
     if tag_type.bpp <= 2:
         bytes_per_row = (native_width + 7) // 8

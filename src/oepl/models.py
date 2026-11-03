@@ -658,6 +658,9 @@ class TagType:
             "black": [0, 0, 0],
         }
     )
+    # How the panel actually shows each colour, where it differs from
+    # color_table ("perceptual"). See display_colors.
+    perceptual: dict[str, list[int]] = field(default_factory=dict)
     short_lut: int = 2
     options: list[Any] = field(default_factory=list)
     content_ids: list[Any] = field(default_factory=list)
@@ -691,6 +694,18 @@ class TagType:
         return next((name for name in ("red", "yellow") if name in self.color_table), None)
 
     @property
+    def display_colors(self) -> dict[str, list[int]]:
+        """How the panel shows each colour of :attr:`color_table`.
+
+        ``color_table`` holds the colours the AP expects in an image, which
+        are idealised: a BWRY panel's yellow is ``[255, 255, 0]`` there but
+        looks like ``[200, 200, 0]``. Tag types that know better say so in
+        ``perceptual``; any colour they leave out looks as ``color_table``
+        says. The AP's web UI draws tag images with these colours.
+        """
+        return {name: self.perceptual.get(name, rgb) for name, rgb in self.color_table.items()}
+
+    @property
     def has_led(self) -> bool:
         """Whether this hardware has an LED, per the tag type's ``options``.
 
@@ -715,6 +730,7 @@ class TagType:
             rotatebuffer=_as_int(data.get("rotatebuffer"), 0),
             bpp=_as_int(data.get("bpp"), 2),
             color_table=data.get("colortable", {"white": [255, 255, 255], "black": [0, 0, 0]}),
+            perceptual=data.get("perceptual", {}),
             short_lut=_as_int(data.get("shortlut"), 2),
             options=data.get("options", []),
             content_ids=data.get("contentids", []),
