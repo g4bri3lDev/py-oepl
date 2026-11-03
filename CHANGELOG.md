@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.12.0...v0.13.0) (2026-11-03)
+
+
+### Features
+
+* dither for the colours a tag's panel really shows ([c281d93](https://github.com/g4bri3lDev/py-oepl/commit/c281d93bf923660ab115e2924a168b5f8a60bec9))
+
 ## [0.12.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.11.0...v0.12.0) (2026-11-03)
 
 
