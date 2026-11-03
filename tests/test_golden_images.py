@@ -8,6 +8,10 @@ cover G5 modes 0/1/2, zlib and raw payloads, 1bpp and 2bpp, rotatebuffer
 This test MUST pass against the code as it stands before any refactor, and
 MUST keep passing — unchanged — after every subsequent commit. No output
 pixel may change; that is the whole point of having it.
+
+The PNGs are in ``colortable`` colours, so they pin the decoding and not the
+palette: tag types are loaded without their ``perceptual`` colours, which
+tests/test_dithering.py covers.
 """
 
 import json
@@ -47,6 +51,7 @@ def test_golden_image_decodes_pixel_exact(entry: dict[str, Any]) -> None:
     with tagtype_path.open() as f:
         tagtype_json = json.load(f)
 
+    tagtype_json.pop("perceptual", None)
     tag_type = TagType.from_dict(entry["hw_type"], tagtype_json)
 
     decoded = decode_image_pil(raw_data, tag_type)
