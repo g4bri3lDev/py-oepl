@@ -116,3 +116,37 @@ def test_tag_images_are_shown_in_the_colours_the_panel_shows():
     image = _bitmap_to_image(b"\x00" * plane + b"\xff" * plane, tag_type)
 
     assert colors(image) == {tuple(SEEN_YELLOW)}
+
+
+def bwr_white_first() -> TagType:
+    """M2 2.9" (type 01): white first, as the AP lists it; no perceptual colours."""
+    data = {"width": 16, "height": 8, "colortable": {"white": WHITE, "black": BLACK, "red": RED}}
+    return TagType.from_dict(0x01, data)
+
+
+@pytest.mark.parametrize("mode", [DitherMode.NONE, DitherMode.ORDERED, DitherMode.FLOYD_STEINBERG])
+@pytest.mark.parametrize("tag_type", [bwr_white_first(), bwry()], ids=["bwr", "bwry"])
+def test_black_on_white_stays_black_on_white(tag_type, mode):
+    """Exact colours keep their ink, whatever order the colortable lists them in."""
+    image = Image.new("RGB", (8, 8), tuple(WHITE))
+    image.paste(tuple(BLACK), (0, 0, 4, 4))
+
+    for result in (
+        dithering.dither_for_tag(image, tag_type, mode),
+        dithering.as_displayed(dithering.dither_for_tag(image, tag_type, mode), tag_type),
+    ):
+        rgb = result.convert("RGB")
+        assert rgb.getpixel((6, 6)) == tuple(WHITE)
+        assert rgb.getpixel((1, 1)) == tuple(BLACK)
+
+
+@pytest.mark.parametrize("mode", [DitherMode.NONE, DitherMode.ORDERED, DitherMode.FLOYD_STEINBERG])
+def test_red_and_yellow_keep_their_inks(mode):
+    """BWRY lists red before yellow; epaper-dithering's own order is the reverse."""
+    image = Image.new("RGB", (8, 8), tuple(YELLOW))
+    image.paste(tuple(RED), (0, 0, 4, 4))
+
+    rgb = dithering.dither_for_tag(image, bwry(), mode).convert("RGB")
+
+    assert rgb.getpixel((6, 6)) == tuple(YELLOW)
+    assert rgb.getpixel((1, 1)) == tuple(RED)
