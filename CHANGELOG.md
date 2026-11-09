@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/g4bri3lDev/py-oepl/compare/v0.13.0...v0.13.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* keep black and white, red and yellow on their own inks when dithering for a tag ([1a4e7ef](https://github.com/g4bri3lDev/py-oepl/commit/1a4e7ef18c9e0d1462ad77e7b7334fded0157fbd))
+
 ## [0.13.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.12.0...v0.13.0) (2026-11-03)
 
 
