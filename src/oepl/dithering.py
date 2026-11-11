@@ -17,15 +17,6 @@ from PIL import Image
 
 from .models import TagType
 
-IDEAL_BWR = Palette.from_srgb(
-    [
-        ((255, 255, 255), "white", "#ffffff"),
-        ((0, 0, 0), "black", "#000000"),
-        ((255, 0, 0), "red", "#ff0000"),
-    ]
-)
-"""Pure white, black and red, for when the tag type isn't known."""
-
 
 def palette(tag_type: TagType) -> Palette:
     """The palette to dither for *tag_type*: its colours as the panel shows them.

@@ -98,12 +98,17 @@ async def test_upload_image_pil_default(client):
     from PIL import Image
 
     from oepl.client import dither_image
+    from oepl.models import TagType
 
     image = Image.new("RGB", (4, 4), color="red")
+    tag_type = TagType.from_dict(
+        0x01,
+        {"width": 4, "height": 4, "colortable": {"white": [255, 255, 255], "black": [0, 0, 0], "red": [255, 0, 0]}},
+    )
 
     with aioresponses() as m:
         m.post(f"{BASE}/imgupload", status=200, body=b"")
-        await client.upload_image("aabbccddeeff", image)
+        await client.upload_image("aabbccddeeff", image, tag_type=tag_type)
 
         args, kwargs = _get_upload_call(m)
         body = kwargs["data"]
@@ -949,6 +954,37 @@ async def test_get_tag_type_uses_the_firmware_file_name(client, hw_type, filenam
 
     assert tag_type is not None
     assert tag_type.width == 296
+
+
+@pytest.mark.asyncio
+async def test_upload_image_will_not_guess_the_panels_colours(client):
+    """Dithering a PIL image needs a tag type or palette; nothing is sent without one."""
+    from PIL import Image
+
+    pytest.importorskip("oepl.dithering", exc_type=ModuleNotFoundError)
+
+    with aioresponses() as m:
+        with pytest.raises(ValueError, match="tag_type or palette"):
+            await client.upload_image("AABBCCDDEEFF", Image.new("RGB", (4, 4), "red"))
+        assert not m.requests
+
+
+@pytest.mark.asyncio
+async def test_upload_image_sends_undithered_without_a_palette_when_asked(client):
+    from PIL import Image
+
+    from oepl import DitherMode
+
+    pytest.importorskip("oepl.dithering", exc_type=ModuleNotFoundError)
+
+    with aioresponses() as m:
+        m.post(f"{BASE}/imgupload", status=200, body=b"")
+        await client.upload_image("AABBCCDDEEFF", Image.new("RGB", (4, 4), "red"), dither_mode=DitherMode.NONE)
+
+        _args, kwargs = _get_upload_call(m)
+        text_fields, _files = _parse_multipart(kwargs["data"], kwargs["headers"]["Content-Type"])
+
+    assert "dither" not in text_fields
 
 
 @pytest.mark.asyncio

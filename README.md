@@ -720,8 +720,10 @@ Client-side dithering requires the `dither` extra (`pip install py-oepl[dither]`
 `epaper-dithering`. When it's installed, `upload_image()` applies Floyd-Steinberg dithering to PIL
 image input by default. Pass the tag's `TagType` to dither to the colours its panel really shows
 (its `perceptual` colours) and send its `colortable` colours; a pixel of exactly a colortable
-colour is drawn with that ink alone. Without a tag type it dithers to pure black, white and red,
-or to an epaper-dithering `Palette` you pass:
+colour is drawn with that ink alone. Without a tag type, pass an epaper-dithering `Palette`, or
+`dither_mode=DitherMode.NONE` to upload the image as it is; with neither, `upload_image()` raises
+`ValueError` rather than guess the panel's colours. `client.tag(mac).upload_image()` passes the
+tag's type for you:
 
 ```python
 from oepl import DitherMode

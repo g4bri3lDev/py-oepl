@@ -37,12 +37,11 @@ from .websocket import _WebSocketHandler
 try:
     from epaper_dithering import DitherMode, DitherOptions, Palette, dither_image
 
-    from .dithering import IDEAL_BWR, dither_for_tag
+    from .dithering import dither_for_tag
 except ModuleNotFoundError:
     DitherMode = None  # type: ignore[assignment,misc]
     DitherOptions = None  # type: ignore[assignment,misc]
     Palette = None  # type: ignore[assignment,misc]
-    IDEAL_BWR = None  # type: ignore[assignment]
     dither_image = None  # type: ignore[assignment]
     dither_for_tag = None  # type: ignore[assignment]
 
@@ -370,9 +369,8 @@ class OEPLClient:
                 against the colours its panel really shows, as
                 :func:`oepl.dithering.dither_for_tag` does, and
                 *palette* is ignored.
-            palette: epaper-dithering palette to dither to without a
-                *tag_type*. Defaults to an idealised black, white and red.
-                Only applies to PIL image input.
+            palette: epaper-dithering palette to dither to, for a panel
+                without a *tag_type*. Only applies to PIL image input.
             dither: AP-side dithering mode (``0``=none, ``1``=Burkes,
                 ``2``=ordered/pattern). When omitted: if *image* is a PIL
                 image that was client-side dithered, ``0`` is sent (to avoid
@@ -408,6 +406,8 @@ class OEPLClient:
                 :class:`~oepl.exceptions.OEPLTimeoutError` if exceeded.
 
         Raises:
+            ValueError: If a PIL image is to be dithered client-side but
+                neither *tag_type* nor *palette* is given.
             OEPLConnectionError: If ``wait=True`` but the WebSocket isn't
                 connected.
             OEPLTimeoutError: If ``wait=True`` and the tag doesn't report
@@ -429,11 +429,12 @@ class OEPLClient:
                 if _dm != DitherMode.NONE:
                     if tag_type is not None:
                         image = dither_for_tag(image, tag_type, _dm)
+                    elif palette is not None:
+                        image = dither_image(image, palette, DitherOptions(mode=_dm))
                     else:
-                        image = dither_image(
-                            image,
-                            palette if palette is not None else IDEAL_BWR,
-                            DitherOptions(mode=_dm),
+                        raise ValueError(
+                            "Client-side dithering needs the panel's colours: pass tag_type or "
+                            "palette, or dither_mode=DitherMode.NONE to upload the image as it is."
                         )
                     client_dithered = True
             buf = io.BytesIO()
