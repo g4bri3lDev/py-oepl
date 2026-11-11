@@ -35,12 +35,14 @@ from .update import Updates
 from .websocket import _WebSocketHandler
 
 try:
-    from epaper_dithering import ColorScheme, DitherMode, dither_image
+    from epaper_dithering import DitherMode, DitherOptions, Palette, dither_image
 
-    from .dithering import dither_for_tag
-except ImportError:
+    from .dithering import IDEAL_BWR, dither_for_tag
+except ModuleNotFoundError:
     DitherMode = None  # type: ignore[assignment,misc]
-    ColorScheme = None  # type: ignore[assignment,misc]
+    DitherOptions = None  # type: ignore[assignment,misc]
+    Palette = None  # type: ignore[assignment,misc]
+    IDEAL_BWR = None  # type: ignore[assignment]
     dither_image = None  # type: ignore[assignment]
     dither_for_tag = None  # type: ignore[assignment]
 
@@ -321,7 +323,7 @@ class OEPLClient:
         image: "Image.Image | bytes",
         *,
         dither_mode: "DitherMode | None" = None,
-        color_scheme: "ColorScheme | None" = None,
+        palette: "Palette | None" = None,
         tag_type: TagType | None = None,
         dither: int | None = None,
         ttl: int = 0,
@@ -367,10 +369,10 @@ class OEPLClient:
             tag_type: The tag's type. When given, client-side dithering is
                 against the colours its panel really shows, as
                 :func:`oepl.dithering.dither_for_tag` does, and
-                *color_scheme* is ignored.
-            color_scheme: Color scheme for dithering. Defaults to
-                ``ColorScheme.BWR`` when *epaper-dithering* is installed. Only
-                applies to PIL image input.
+                *palette* is ignored.
+            palette: epaper-dithering palette to dither to without a
+                *tag_type*. Defaults to an idealised black, white and red.
+                Only applies to PIL image input.
             dither: AP-side dithering mode (``0``=none, ``1``=Burkes,
                 ``2``=ordered/pattern). When omitted: if *image* is a PIL
                 image that was client-side dithered, ``0`` is sent (to avoid
@@ -424,12 +426,15 @@ class OEPLClient:
         if isinstance(image, Image.Image):
             if dither_image is not None:
                 _dm = dither_mode if dither_mode is not None else DitherMode.FLOYD_STEINBERG
-                _cs = color_scheme if color_scheme is not None else ColorScheme.BWR
                 if _dm != DitherMode.NONE:
                     if tag_type is not None:
                         image = dither_for_tag(image, tag_type, _dm)
                     else:
-                        image = dither_image(image, _cs, mode=_dm)
+                        image = dither_image(
+                            image,
+                            palette if palette is not None else IDEAL_BWR,
+                            DitherOptions(mode=_dm),
+                        )
                     client_dithered = True
             buf = io.BytesIO()
             image.convert("RGB").save(buf, format="JPEG", quality=100, subsampling=0)

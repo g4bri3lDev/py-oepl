@@ -953,14 +953,14 @@ async def test_get_tag_type_uses_the_firmware_file_name(client, hw_type, filenam
 
 @pytest.mark.asyncio
 async def test_upload_image_dithers_for_the_tag_type(client):
-    """With a tag type, the panel's real colours are dithered for and the colortable's sent."""
+    """With a tag type, its colortable is dithered to: yellow stays yellow, not a BWR mix."""
     import io
 
     from PIL import Image
 
     from oepl.models import TagType
 
-    pytest.importorskip("oepl.dithering")
+    pytest.importorskip("oepl.dithering", exc_type=ModuleNotFoundError)
     tag_type = TagType.from_dict(
         0x4C,
         {
@@ -978,7 +978,7 @@ async def test_upload_image_dithers_for_the_tag_type(client):
 
     with aioresponses() as m:
         m.post(f"{BASE}/imgupload", status=200, body=b"")
-        await client.upload_image("AABBCCDDEEFF", Image.new("RGB", (8, 8), (200, 200, 0)), tag_type=tag_type)
+        await client.upload_image("AABBCCDDEEFF", Image.new("RGB", (8, 8), (255, 255, 0)), tag_type=tag_type)
 
         _args, kwargs = _get_upload_call(m)
         text_fields, file_parts = _parse_multipart(kwargs["data"], kwargs["headers"]["Content-Type"])

@@ -6,8 +6,8 @@ from PIL import Image
 from oepl.image import _bitmap_to_image
 from oepl.models import TagType
 
-dithering = pytest.importorskip("oepl.dithering")
-from epaper_dithering import ColorScheme, DitherMode  # noqa: E402
+dithering = pytest.importorskip("oepl.dithering", exc_type=ModuleNotFoundError)
+from epaper_dithering import DitherMode, DitherOptions, Palette  # noqa: E402
 
 WHITE, BLACK, RED, YELLOW = [255, 255, 255], [0, 0, 0], [255, 0, 0], [255, 255, 0]
 # As the M3 BWRY tag types have it.
@@ -51,52 +51,46 @@ def test_without_perceptual_the_panel_shows_the_colortable():
     assert tag_type.display_colors == tag_type.color_table
 
 
-@pytest.mark.parametrize(
-    ("names", "scheme"),
-    [
-        (("white", "black"), ColorScheme.MONO),
-        (("white", "black", "red"), ColorScheme.BWR),
-        (("white", "black", "yellow"), ColorScheme.BWY),
-        (("white", "black", "red", "yellow"), ColorScheme.BWRY),
-        (("white", "black", "gray"), None),
-    ],
-)
-def test_color_scheme_follows_the_colortable(names, scheme):
-    tag_type = bwry(colortable={name: BLACK for name in names}, perceptual={})
-    assert dithering.color_scheme(tag_type) is scheme
+def test_the_palette_follows_the_colortable():
+    """Any colours, in colortable order, so indices are colortable positions."""
+    tag_type = bwry(colortable={"white": WHITE, "black": BLACK, "gray": [128, 128, 128]}, perceptual={})
+    entries = dithering.palette(tag_type).entries
+    assert [entry.name for entry in entries] == ["white", "black", "gray"]
+    assert [entry.nominal for entry in entries] == [(255, 255, 255), (0, 0, 0), (128, 128, 128)]
 
 
 def test_the_palette_is_how_the_panel_looks():
     palette = dithering.palette(bwry())
-    assert palette.colors["yellow"] == tuple(SEEN_YELLOW)
-    assert palette.accent == "red"
-    assert palette.scheme is ColorScheme.BWRY
+    yellow = palette.index_of("yellow")
+    assert palette.entries[yellow].nominal == tuple(YELLOW)
+    assert palette.preview_rgb()[yellow] == pytest.approx(tuple(SEEN_YELLOW), abs=1)
 
 
-def test_a_black_and_white_palette_accents_in_black():
-    tag_type = bwry(colortable={"white": WHITE, "black": BLACK}, perceptual={})
-    assert dithering.palette(tag_type).accent == "black"
-
-
-def test_the_colour_the_panel_shows_is_drawn_with_that_ink_alone():
-    """An area of the panel's real yellow needs no black mixed in."""
-    image = Image.new("RGB", (8, 8), tuple(SEEN_YELLOW))
+def test_the_colortable_colour_is_drawn_with_that_ink_alone():
+    """Sent as the colortable's yellow, which the AP inks as yellow exactly."""
+    image = Image.new("RGB", (8, 8), tuple(YELLOW))
 
     dithered = dithering.dither_for_tag(image, bwry(), DitherMode.FLOYD_STEINBERG)
 
-    # Sent as the colortable's yellow, which the AP inks as yellow exactly.
     assert colors(dithered) == {tuple(YELLOW)}
     assert colors(dithering.as_displayed(dithered, bwry())) == {tuple(SEEN_YELLOW)}
 
 
-def test_idealised_dithering_mixes_black_into_the_same_area():
-    """What the colortable alone would do, for contrast."""
+def test_the_panels_yellow_needs_less_black_than_the_idealised_one():
+    """Dithering for the colortable alone treats yellow as far lighter than it is."""
     from epaper_dithering import dither_image
 
-    image = Image.new("RGB", (8, 8), tuple(SEEN_YELLOW))
-    dithered = dither_image(image, ColorScheme.BWRY, mode=DitherMode.FLOYD_STEINBERG)
+    image = Image.new("RGB", (32, 32), tuple(SEEN_YELLOW))
+    ideal = Palette.from_srgb([(tuple(rgb), name, tuple(rgb)) for name, rgb in bwry().color_table.items()])
+    black = list(bwry().color_table).index("black")
 
-    assert len(colors(dithered)) > 1
+    def black_pixels(dithered: Image.Image) -> int:
+        return dithered.histogram()[black]
+
+    real = dithering.dither_for_tag(image, bwry(), DitherMode.FLOYD_STEINBERG)
+    idealised = dither_image(image, ideal, DitherOptions(mode=DitherMode.FLOYD_STEINBERG))
+
+    assert black_pixels(real) < black_pixels(idealised)
 
 
 def test_tag_images_are_shown_in_the_colours_the_panel_shows():
@@ -142,7 +136,7 @@ def test_black_on_white_stays_black_on_white(tag_type, mode):
 
 @pytest.mark.parametrize("mode", [DitherMode.NONE, DitherMode.ORDERED, DitherMode.FLOYD_STEINBERG])
 def test_red_and_yellow_keep_their_inks(mode):
-    """BWRY lists red before yellow; epaper-dithering's own order is the reverse."""
+    """BWRY lists red before yellow; epaper-dithering 6's own order was the reverse."""
     image = Image.new("RGB", (8, 8), tuple(YELLOW))
     image.paste(tuple(RED), (0, 0, 4, 4))
 

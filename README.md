@@ -242,7 +242,8 @@ async def upload_image(
     image: "Image.Image | bytes",
     *,
     dither_mode: "DitherMode | None" = None,
-    color_scheme: "ColorScheme | None" = None,
+    palette: "Palette | None" = None,
+    tag_type: TagType | None = None,
     dither: int | None = None,
     ttl: int = 0,
     content_mode: int = 24,
@@ -276,7 +277,7 @@ Key points:
   When omitted: if `image` was a PIL image that this call already dithered client-side (see
   below), `0` is sent automatically to avoid double-dithering; otherwise the field is omitted
   entirely and the firmware defaults to `1` (Burkes). This interacts with the optional
-  `epaper-dithering`-based client-side dithering (`dither_mode`/`color_scheme`, PIL input only) —
+  `epaper-dithering`-based client-side dithering (`dither_mode`/`tag_type`/`palette`, PIL input only) —
   the two are mutually exclusive per upload; whichever one actually ran is the one whose result
   reaches the tag.
 - `/imgupload` **returns an empty body on success**, so a failed upload (malformed multipart body,
@@ -717,20 +718,20 @@ a non-2xx HTTP status.
 
 Client-side dithering requires the `dither` extra (`pip install py-oepl[dither]`), which installs
 `epaper-dithering`. When it's installed, `upload_image()` applies Floyd-Steinberg dithering to PIL
-image input by default. Override with:
+image input by default. Pass the tag's `TagType` to dither to the colours its panel really shows
+(its `perceptual` colours) and send its `colortable` colours; a pixel of exactly a colortable
+colour is drawn with that ink alone. Without a tag type it dithers to pure black, white and red,
+or to an epaper-dithering `Palette` you pass:
 
 ```python
-from oepl import DitherMode, ColorScheme
+from oepl import DitherMode
 
-await client.upload_image(
-    mac,
-    pil_image,
-    dither_mode=DitherMode.NONE,
-    color_scheme=ColorScheme.BW,
-)
+tag_type = await client.get_tag_type(tag.hw_type)
+await client.upload_image(mac, pil_image, tag_type=tag_type, dither_mode=DitherMode.ORDERED)
 ```
 
-`DitherMode` and `ColorScheme` are `None` when `epaper-dithering` is not installed.
+`oepl.dithering` has the same steps on their own: `dither_for_tag()` and `as_displayed()` for a
+preview. `DitherMode` and `Palette` are `None` when `epaper-dithering` is not installed.
 
 Whether or not client-side dithering ran, the AP also applies its own dithering server-side
 unless told otherwise — see the `dither` parameter under [`upload_image`](#upload_image) above for
