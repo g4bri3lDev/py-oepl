@@ -57,10 +57,10 @@ from .update import (
 
 # Re-export epaper-dithering types so callers don't need a separate import
 try:
-    from epaper_dithering import ColorScheme, DitherMode
-except ImportError:
+    from epaper_dithering import DitherMode, Palette
+except ModuleNotFoundError:
     DitherMode = None  # type: ignore[assignment,misc]
-    ColorScheme = None  # type: ignore[assignment,misc]
+    Palette = None  # type: ignore[assignment,misc]
 
 __all__ = [
     # Client
@@ -122,5 +122,5 @@ __all__ = [
     "decode_image_pil",
     # Dithering (from epaper-dithering)
     "DitherMode",
-    "ColorScheme",
+    "Palette",
 ]

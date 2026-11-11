@@ -213,6 +213,7 @@ async def test_upload_image_contain_letterboxes_with_white_borders(client, tag_d
 
     async def fake_upload(mac, img, **kwargs):
         captured["image"] = img
+        captured["tag_type"] = kwargs.get("tag_type")
 
     monkeypatch.setattr(client, "upload_image", fake_upload)
 
@@ -222,6 +223,8 @@ async def test_upload_image_contain_letterboxes_with_white_borders(client, tag_d
 
     result = captured["image"]
     assert result.size == (296, 152)
+    # Dithered for this tag's colours, not guessed ones.
+    assert captured["tag_type"].width == 296
     # Letterboxed onto a white canvas: corners must be padding, not the original red fill.
     assert result.getpixel((0, 0)) == (255, 255, 255)
     assert result.getpixel((295, 0)) == (255, 255, 255)

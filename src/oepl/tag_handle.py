@@ -101,7 +101,9 @@ class TagHandle:
                 the tag reports render completion.
             wait_timeout: Forwarded to :meth:`OEPLClient.upload_image`.
             **kwargs: Forwarded to :meth:`OEPLClient.upload_image` (``ttl``,
-                ``rotate``, ``lut``, ``dither_mode``, etc).
+                ``rotate``, ``lut``, ``dither_mode``, etc). A PIL image is
+                dithered for this tag's type unless ``tag_type`` or
+                ``palette`` says otherwise.
 
         Raises:
             ValueError: ``fit="strict"`` and the image size doesn't match the
@@ -123,6 +125,7 @@ class TagHandle:
                     fit,
                 )
             else:
+                kwargs.setdefault("tag_type", tag_type)
                 expected = (tag_type.width, tag_type.height)
                 actual = image.size
                 if actual != expected:
