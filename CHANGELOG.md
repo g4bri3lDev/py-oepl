@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.13.1...v1.0.0) (2026-11-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* OEPLClient.upload_image raises ValueError for a PIL image without tag_type or palette, unless dither_mode=DitherMode.NONE.
+* requires epaper-dithering 7. upload_image's `color_scheme` is replaced by `palette`; `oepl.ColorScheme` and `oepl.dithering.color_scheme` are removed, and `oepl.Palette` is exported instead. The palette from `oepl.dithering.palette` is an epaper-dithering 7 `Palette`.
+
+### Features
+
+* move to epaper-dithering 7 ([662d16a](https://github.com/g4bri3lDev/py-oepl/commit/662d16acd72db31424906fc44d2193a34932fc10))
+* refuse to dither without the panel's colours ([cbb0892](https://github.com/g4bri3lDev/py-oepl/commit/cbb08922c7228c3b6cde8ebd3ab99e144032ab66))
+
 ## [0.13.1](https://github.com/g4bri3lDev/py-oepl/compare/v0.13.0...v0.13.1) (2026-11-09)
 
 
