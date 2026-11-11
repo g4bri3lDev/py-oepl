@@ -1022,4 +1022,91 @@ async def test_upload_image_dithers_for_the_tag_type(client):
     assert text_fields["dither"] == b"0"
     sent = Image.open(io.BytesIO(file_parts["image"])).convert("RGB")
     # JPEG, so near rather than exact: every pixel is the colortable's yellow.
-    assert all(r > 240 and g > 240 and b < 15 for r, g, b in sent.getdata())
+    assert all(r > 240 and g > 240 and b < 15 for r, g, b in sent.get_flattened_data())
+
+
+@pytest.mark.asyncio
+async def test_upload_image_dithers_to_a_palette_it_is_given(client):
+    """Without a tag type, the palette passed is the one dithered to."""
+    import io
+
+    from PIL import Image
+
+    pytest.importorskip("oepl.dithering", exc_type=ModuleNotFoundError)
+    from epaper_dithering import Palette
+
+    black_and_yellow = Palette.from_srgb([((0, 0, 0), "black", "#000000"), ((255, 255, 0), "yellow", "#ffff00")])
+
+    with aioresponses() as m:
+        m.post(f"{BASE}/imgupload", status=200, body=b"")
+        await client.upload_image("AABBCCDDEEFF", Image.new("RGB", (8, 8), (255, 255, 0)), palette=black_and_yellow)
+
+        _args, kwargs = _get_upload_call(m)
+        text_fields, file_parts = _parse_multipart(kwargs["data"], kwargs["headers"]["Content-Type"])
+
+    assert text_fields["dither"] == b"0"
+    sent = Image.open(io.BytesIO(file_parts["image"])).convert("RGB")
+    assert all(r > 240 and g > 240 and b < 15 for r, g, b in sent.get_flattened_data())
+
+
+def _reimport_without(monkeypatch, module):
+    """Reimport oepl and oepl.client as if *module* could not be imported."""
+    import importlib
+    import sys
+
+    import oepl
+    import oepl.client
+
+    monkeypatch.setitem(sys.modules, module, None)  # import fails with ModuleNotFoundError
+    monkeypatch.delitem(sys.modules, "oepl.dithering", raising=False)
+    try:
+        importlib.reload(oepl.client)
+        importlib.reload(oepl)
+        yield oepl
+    finally:
+        monkeypatch.undo()
+        importlib.reload(oepl.client)
+        importlib.reload(oepl)
+
+
+@pytest.fixture
+def without_epaper_dithering(monkeypatch):
+    yield from _reimport_without(monkeypatch, "epaper_dithering")
+
+
+@pytest.mark.asyncio
+async def test_without_epaper_dithering_images_go_to_the_ap_undithered(without_epaper_dithering):
+    """The dither extra is optional: no client-side dithering, and the AP dithers as it likes."""
+    from PIL import Image
+
+    oepl = without_epaper_dithering
+    assert oepl.DitherMode is None
+    assert oepl.Palette is None
+
+    async with oepl.OEPLClient(HOST) as client:
+        with aioresponses() as m:
+            m.post(f"{BASE}/imgupload", status=200, body=b"")
+            await client.upload_image("AABBCCDDEEFF", Image.new("RGB", (4, 4), "red"))
+
+            _args, kwargs = _get_upload_call(m)
+            text_fields, _files = _parse_multipart(kwargs["data"], kwargs["headers"]["Content-Type"])
+
+    assert "dither" not in text_fields
+
+
+def test_an_incompatible_epaper_dithering_is_not_mistaken_for_a_missing_one(monkeypatch):
+    """Names missing from epaper-dithering raise, rather than quietly disabling dithering."""
+    import importlib
+    import sys
+    import types
+
+    import oepl.client
+
+    stale = types.ModuleType("epaper_dithering")  # imports, but has none of 7's names
+    monkeypatch.setitem(sys.modules, "epaper_dithering", stale)
+    try:
+        with pytest.raises(ImportError):
+            importlib.reload(oepl.client)
+    finally:
+        monkeypatch.undo()
+        importlib.reload(oepl.client)
