@@ -13,6 +13,15 @@ from .models import TagType
 
 _LOGGER = logging.getLogger(__name__)
 
+# Tag types with "bpp": 5 (e.g. BWRY panels) store 2 bits per pixel, packed,
+# as colour table indices. Same value as BPP_PACKED_2BIT in the AP firmware.
+BPP_PACKED_2BIT = 5
+
+
+def _packed_bits_per_pixel(bpp: int) -> int:
+    """Bits per pixel in a packed buffer (``BPP_PACKED_2BIT`` means 2)."""
+    return 2 if bpp == BPP_PACKED_2BIT else bpp
+
 
 def decode_image(raw_data: bytes, tag_type: TagType) -> bytes:
     """Decode raw image bytes from the AP to JPEG.
@@ -88,7 +97,7 @@ def _decode_esl_raw(data: bytes, tag_type: TagType) -> bytes:
         bytes_per_plane = bytes_per_row * height
         total_size = bytes_per_plane * (2 if tag_type.bpp == 2 else 1)
     else:
-        bytes_per_row = (width * tag_type.bpp + 7) // 8
+        bytes_per_row = (width * _packed_bits_per_pixel(tag_type.bpp) + 7) // 8
         total_size = bytes_per_row * height
 
     header_size = 6
@@ -164,7 +173,7 @@ def _bitmap_to_image(data: bytes, tag_type: TagType) -> Image.Image:
                 else:
                     pixels[x, y] = color_table["white"]
     else:
-        bits_per_pixel = tag_type.bpp
+        bits_per_pixel = _packed_bits_per_pixel(tag_type.bpp)
         bit_mask = (1 << bits_per_pixel) - 1
         bytes_per_row = (native_width * bits_per_pixel + 7) // 8
         colors_list = list(color_table.values())
