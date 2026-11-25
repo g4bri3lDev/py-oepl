@@ -82,3 +82,75 @@ def test_decode_esl_raw_g5_matching_geometry_but_malformed_falls_through():
     payload = bytes.fromhex("069800c80001a747054965")  # header 152x200 mode=1
     result = _decode_esl_raw(payload, tt)
     assert isinstance(result, bytes)
+
+
+# Tag type 0xBB ("Gicisky BLE EPD BWRY 2.9\"") as the AP serves it: bpp 5 is
+# BPP_PACKED_2BIT, 2 bits per pixel indexing the colortable, MSB first.
+def make_bwry_tag_type() -> TagType:
+    return TagType(
+        type_id=0xBB,
+        width=296,
+        height=128,
+        rotatebuffer=1,
+        bpp=5,
+        color_table={
+            "black": [0, 0, 0],
+            "white": [255, 255, 255],
+            "yellow": [255, 255, 0],
+            "red": [255, 0, 0],
+        },
+    )
+
+
+# Four vertical bands on the displayed image, one per colour table index
+BWRY_BANDS = [1, 0, 3, 2]  # white, black, red, yellow
+
+
+def _bwry_band(x: int, width: int) -> int:
+    return BWRY_BANDS[x * len(BWRY_BANDS) // width]
+
+
+def _make_packed_2bit(tt: TagType) -> bytes:
+    """Pack a banded image like the AP: rotated buffer, 2 bits/pixel, MSB first."""
+    from PIL import Image
+
+    row = bytes(_bwry_band(x, tt.width) for x in range(tt.width))
+    shown = Image.frombytes("L", (tt.width, tt.height), row * tt.height)
+    # rotatebuffer 1: the buffer is the displayed image turned 90° counter-clockwise
+    indices = shown.transpose(Image.Transpose.ROTATE_90).tobytes()
+    out = bytearray()
+    for i in range(0, len(indices), 4):
+        a, b, c, d = indices[i : i + 4]
+        out.append(a << 6 | b << 4 | c << 2 | d)
+    return bytes(out)
+
+
+def _assert_bwry_bands(img, tt: TagType) -> None:
+    assert img.size == (tt.width, tt.height)
+    colours = list(tt.color_table.values())
+    for x in (10, 100, 180, 280):
+        want = tuple(colours[_bwry_band(x, tt.width)])
+        for y in (5, 64, 120):
+            assert img.getpixel((x, y)) == want, (x, y)
+
+
+def test_decode_packed_2bit_raw():
+    """bpp 5 (BPP_PACKED_2BIT) is 2 bits per pixel, not 5."""
+    from oepl.image import decode_image_pil
+
+    tt = make_bwry_tag_type()
+    raw = _make_packed_2bit(tt)
+    assert len(raw) == 296 * 128 * 2 // 8
+    _assert_bwry_bands(decode_image_pil(raw, tt), tt)
+
+
+def test_decode_packed_2bit_zlib():
+    import zlib
+
+    from oepl.image import decode_image_pil
+
+    tt = make_bwry_tag_type()
+    bitmap = _make_packed_2bit(tt)
+    payload = bytes(6) + bitmap  # 6-byte header the AP puts before the bitmap
+    data = len(payload).to_bytes(4, "little") + zlib.compress(payload)
+    _assert_bwry_bands(decode_image_pil(data, tt), tt)
