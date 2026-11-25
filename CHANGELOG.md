@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.1](https://github.com/g4bri3lDev/py-oepl/compare/v1.0.0...v1.0.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* decode packed 2-bit (bpp 5) images from the AP ([c34d08a](https://github.com/g4bri3lDev/py-oepl/commit/c34d08a5fe59836dd59853b90a177d48695aef95))
+* decode packed 2-bit (bpp 5) images from the AP ([1944ae6](https://github.com/g4bri3lDev/py-oepl/commit/1944ae653a735b862cf63548ebb5c040d386f8dc))
+
 ## [1.0.0](https://github.com/g4bri3lDev/py-oepl/compare/v0.13.1...v1.0.0) (2026-11-11)
 
 
