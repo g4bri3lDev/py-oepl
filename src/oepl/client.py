@@ -53,6 +53,10 @@ _LOGGER = logging.getLogger(__name__)
 # with other single-threaded work at that exact moment (see docstrings).
 _OTA_TIMEOUT = aiohttp.ClientTimeout(total=30)
 
+# Split so a connection that never opens (an AP that is offline, raised) can be
+# told apart from a sent request that gets no answer (the AP restarted first).
+_REBOOT_TIMEOUT = aiohttp.ClientTimeout(sock_connect=10, sock_read=10)
+
 
 class OEPLClient:
     """Async client for the OpenEPaperLink Access Point (AP).
@@ -850,8 +854,16 @@ class OEPLClient:
         )
 
     async def reboot_ap(self) -> None:
-        """Reboot the AP."""
-        await self._http.post_form("reboot", {})
+        """Reboot the AP.
+
+        The AP queues its "OK Reboot" answer and often restarts before sending
+        it, so once the request is sent, no answer counts as accepted. Failing
+        to connect at all still raises :class:`OEPLConnectionError`.
+        """
+        try:
+            await self._http.post_form("reboot", {}, timeout=_REBOOT_TIMEOUT)
+        except OEPLTimeoutError:
+            _LOGGER.debug("AP at %s restarted before answering the reboot request", self.host)
 
     async def set_time(self, epoch: int | None = None) -> None:
         """Sync the AP clock to a Unix epoch timestamp.

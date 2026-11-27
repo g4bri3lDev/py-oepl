@@ -822,7 +822,7 @@ wheels = [
 
 [[package]]
 name = "py-oepl"
-version = "0.13.1"
+version = "1.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -852,7 +852,7 @@ dither = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiohttp", specifier = ">=3.9" },
+    { name = "aiohttp", specifier = ">=3.10" },
     { name = "aioresponses", marker = "extra == 'dev'", specifier = ">=0.7.8" },
     { name = "epaper-dithering", marker = "extra == 'all'", specifier = ">=7.0.0,<8.0.0" },
     { name = "epaper-dithering", marker = "extra == 'dither'", specifier = ">=7.0.0,<8.0.0" },

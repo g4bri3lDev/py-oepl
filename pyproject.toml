@@ -23,7 +23,7 @@ classifiers = [
     "Framework :: AsyncIO",
 ]
 dependencies = [
-    "aiohttp>=3.9",
+    "aiohttp>=3.10",
     "pillow>=10.0",
 ]
 

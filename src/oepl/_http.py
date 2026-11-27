@@ -20,6 +20,20 @@ _DEFAULT_TIMEOUT = aiohttp.ClientTimeout(total=10)
 _UPLOAD_TIMEOUT = aiohttp.ClientTimeout(total=30)
 _MAX_UPLOAD_RETRIES = 3
 _UPLOAD_BACKOFF = 2  # seconds; doubles on each retry
+# The AP answers an upload with 409 while it starts up, and when it has no room
+# for another one yet (then with Retry-After). Wait as told, else this long, for
+# at most _BUSY_WAIT_LIMIT seconds in all.
+_BUSY_RETRY_DELAY = 5.0
+_BUSY_WAIT_LIMIT = 60.0
+
+
+def _retry_after(resp: aiohttp.ClientResponse) -> float | None:
+    """Return a numeric ``Retry-After`` header in seconds, else None."""
+    try:
+        value = float(resp.headers.get("Retry-After", ""))
+    except ValueError:
+        return None
+    return value if value >= 0 else None
 
 
 def quote_query_value(value: str) -> str:
@@ -75,6 +89,10 @@ class _HTTPClient:
         session = self._session_provider()
         try:
             resp = await session.request(method, self._url(path), timeout=timeout, **kwargs)
+        except aiohttp.SocketTimeoutError as exc:
+            # Connected and sent, then no answer within sock_read. Also a
+            # ClientError, so it has to come first.
+            raise OEPLTimeoutError(f"Request to {path} timed out") from exc
         except aiohttp.ClientError as exc:
             raise OEPLConnectionError(str(exc)) from exc
         except asyncio.TimeoutError as exc:
@@ -86,7 +104,7 @@ class _HTTPClient:
         if resp.status != 200:
             try:
                 body = await resp.text()
-                raise OEPLResponseError(resp.status, body)
+                raise OEPLResponseError(resp.status, body, retry_after=_retry_after(resp))
             finally:
                 resp.release()
 
@@ -155,6 +173,11 @@ class _HTTPClient:
     async def post_multipart(self, path: str, fields: dict[str, Any], *, check_body: bool = False) -> None:
         """POST multipart/form-data; retries up to 3x on timeout with exponential backoff.
 
+        A 409 from the AP means "come back later" (still starting up, or no
+        room for another upload yet), so it is retried too: after the
+        ``Retry-After`` seconds the AP sends, or 5 without one, for at most 60
+        seconds in all. A 409 that would wait past that is raised.
+
         Builds the body by hand instead of using ``aiohttp.FormData``. The AP's
         ESPAsyncWebServer multipart parser treats *any* part carrying a
         Content-Type header as a file part; ``aiohttp.FormData`` emits a
@@ -180,17 +203,30 @@ class _HTTPClient:
         headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
 
         backoff = _UPLOAD_BACKOFF
-        for attempt in range(1, _MAX_UPLOAD_RETRIES + 1):
+        timeouts = 0
+        busy_waited = 0.0
+        while True:
             try:
                 resp = await self._request("POST", path, data=body, headers=headers, timeout=_UPLOAD_TIMEOUT)
-                if check_body:
-                    _raise_if_error_body(await resp.text())
-                return
             except OEPLTimeoutError:
-                if attempt >= _MAX_UPLOAD_RETRIES:
+                timeouts += 1
+                if timeouts >= _MAX_UPLOAD_RETRIES:
                     raise
                 await asyncio.sleep(backoff)
                 backoff *= 2
+                continue
+            except OEPLResponseError as err:
+                if err.status != 409:
+                    raise
+                delay = _BUSY_RETRY_DELAY if err.retry_after is None else err.retry_after
+                if busy_waited + delay > _BUSY_WAIT_LIMIT:
+                    raise
+                busy_waited += delay
+                await asyncio.sleep(delay)
+                continue
+            if check_body:
+                _raise_if_error_body(await resp.text())
+            return
 
     @staticmethod
     def _encode_multipart(fields: dict[str, Any], boundary: str) -> bytes:

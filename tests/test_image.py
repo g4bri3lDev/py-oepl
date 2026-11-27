@@ -154,3 +154,82 @@ def test_decode_packed_2bit_zlib():
     payload = bytes(6) + bitmap  # 6-byte header the AP puts before the bitmap
     data = len(payload).to_bytes(4, "little") + zlib.compress(payload)
     _assert_bwry_bands(decode_image_pil(data, tt), tt)
+
+
+def _make_planes(tt: TagType, bands: list[int]) -> bytes:
+    """Two bit planes for vertical bands of colour table indices (no rotation)."""
+    bytes_per_row = (tt.width + 7) // 8
+    first = bytearray(bytes_per_row * tt.height)
+    second = bytearray(bytes_per_row * tt.height)
+    for y in range(tt.height):
+        for x in range(tt.width):
+            index = bands[x * len(bands) // tt.width]
+            bit = 0x80 >> (x % 8)
+            if index & 1:
+                first[y * bytes_per_row + x // 8] |= bit
+            if index & 2:
+                second[y * bytes_per_row + x // 8] |= bit
+    return bytes(first + second)
+
+
+def _band_colours(img, tt: TagType, count: int) -> list[tuple[int, ...]]:
+    return [img.getpixel((tt.width * (2 * i + 1) // (2 * count), tt.height // 2)) for i in range(count)]
+
+
+def test_decode_two_planes_bwry_white_first():
+    """M3 BWRY types: both planes set is yellow, not black."""
+    from oepl.image import decode_image_pil
+
+    tt = TagType(
+        type_id=0x2B,
+        width=64,
+        height=8,
+        bpp=2,
+        color_table={
+            "white": [255, 255, 255],
+            "black": [0, 0, 0],
+            "red": [255, 0, 0],
+            "yellow": [255, 255, 0],
+        },
+        perceptual={"yellow": [200, 200, 0]},
+    )
+    img = decode_image_pil(_make_planes(tt, [0, 1, 2, 3]), tt)
+    assert _band_colours(img, tt, 4) == [(255, 255, 255), (0, 0, 0), (255, 0, 0), (200, 200, 0)]
+
+
+def test_decode_two_planes_black_first():
+    """A colour table that starts with black is read by index, like the AP web UI."""
+    from oepl.image import decode_image_pil
+
+    tt = TagType(
+        type_id=0xC0,
+        width=64,
+        height=8,
+        bpp=2,
+        color_table={
+            "black": [0, 0, 0],
+            "white": [255, 255, 255],
+            "yellow": [255, 255, 0],
+            "red": [255, 0, 0],
+        },
+    )
+    img = decode_image_pil(_make_planes(tt, [0, 1, 2, 3]), tt)
+    assert _band_colours(img, tt, 4) == [(0, 0, 0), (255, 255, 255), (255, 255, 0), (255, 0, 0)]
+
+
+def test_decode_two_planes_bwr_unchanged():
+    """BWR: both planes set still shows black, as before."""
+    from oepl.image import decode_image_pil
+
+    tt = make_tag_type(width=64, height=8)
+    img = decode_image_pil(_make_planes(tt, [0, 1, 2, 3]), tt)
+    assert _band_colours(img, tt, 4) == [(255, 255, 255), (0, 0, 0), (255, 0, 0), (0, 0, 0)]
+
+
+def test_decode_one_plane_bw():
+    from oepl.image import decode_image_pil
+
+    tt = TagType(type_id=0x01, width=64, height=8, bpp=1, color_table={"white": [255, 255, 255], "black": [0, 0, 0]})
+    planes = _make_planes(tt, [0, 1])
+    img = decode_image_pil(planes[: len(planes) // 2], tt)
+    assert _band_colours(img, tt, 2) == [(255, 255, 255), (0, 0, 0)]
