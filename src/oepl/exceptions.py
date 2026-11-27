@@ -26,11 +26,16 @@ class OEPLResponseError(OEPLError):
     of HTTP 200 with a body that (once stripped) starts with "Error"/"error"
     — some firmware handlers (e.g. ``/save_cfg`` with an unknown MAC) report
     failures this way instead of via the HTTP status code.
+
+    ``retry_after`` is the response's ``Retry-After`` header in seconds, when
+    it sent one as a number. The AP does with a 409 when it has no room for
+    another upload yet.
     """
 
-    def __init__(self, status: int, body: str) -> None:
+    def __init__(self, status: int, body: str, *, retry_after: float | None = None) -> None:
         self.status = status
         self.body = body
+        self.retry_after = retry_after
         super().__init__(f"AP returned HTTP {status}: {body}")
 
 

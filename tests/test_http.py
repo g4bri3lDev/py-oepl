@@ -170,3 +170,77 @@ async def test_non200_releases_response(http_client):
         with patch("aiohttp.ClientResponse.release", new=MagicMock()) as mock_release, pytest.raises(OEPLResponseError):
             await http_client.get_text("broken")
         mock_release.assert_called()
+
+
+@pytest.fixture
+def no_sleep():
+    """Record the delays post_multipart waits instead of sleeping."""
+    from unittest.mock import AsyncMock
+
+    with patch("oepl._http.asyncio.sleep", new=AsyncMock()) as sleep:
+        yield sleep
+
+
+@pytest.mark.asyncio
+async def test_post_multipart_retries_409_after_retry_after(http_client, no_sleep):
+    """No room for another upload yet: the AP answers 409 with Retry-After."""
+    with aioresponses() as m:
+        m.post(f"{BASE}/imgupload", status=409, body="Busy, come back later", headers={"Retry-After": "3"})
+        m.post(f"{BASE}/imgupload", status=200, body=b"")
+        await http_client.post_multipart("imgupload", {"mac": "DEADBEEF"})
+    no_sleep.assert_awaited_once_with(3.0)
+
+
+@pytest.mark.asyncio
+async def test_post_multipart_retries_409_without_retry_after(http_client, no_sleep):
+    """Starting up: the AP answers a plain 409."""
+    with aioresponses() as m:
+        m.post(f"{BASE}/imgupload", status=409, body="Come back later")
+        m.post(f"{BASE}/imgupload", status=409, body="Come back later")
+        m.post(f"{BASE}/imgupload", status=200, body=b"")
+        await http_client.post_multipart("imgupload", {"mac": "DEADBEEF"})
+    assert [c.args[0] for c in no_sleep.await_args_list] == [5.0, 5.0]
+
+
+@pytest.mark.asyncio
+async def test_post_multipart_gives_up_on_409_after_a_minute(http_client, no_sleep):
+    with aioresponses() as m:
+        m.post(f"{BASE}/imgupload", status=409, body="Come back later", repeat=True)
+        with pytest.raises(OEPLResponseError) as exc_info:
+            await http_client.post_multipart("imgupload", {"mac": "DEADBEEF"})
+    assert exc_info.value.status == 409
+    assert sum(c.args[0] for c in no_sleep.await_args_list) == 60.0
+
+
+@pytest.mark.asyncio
+async def test_post_multipart_does_not_wait_past_the_limit(http_client, no_sleep):
+    """A Retry-After beyond the limit is raised straight away."""
+    with aioresponses() as m:
+        m.post(f"{BASE}/imgupload", status=409, body="Busy", headers={"Retry-After": "120"})
+        with pytest.raises(OEPLResponseError) as exc_info:
+            await http_client.post_multipart("imgupload", {"mac": "DEADBEEF"})
+    assert exc_info.value.retry_after == 120.0
+    no_sleep.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_post_multipart_other_status_is_not_retried(http_client, no_sleep):
+    with aioresponses() as m:
+        m.post(f"{BASE}/imgupload", status=413, body="Image too large")
+        with pytest.raises(OEPLResponseError) as exc_info:
+            await http_client.post_multipart("imgupload", {"mac": "DEADBEEF"})
+    assert exc_info.value.status == 413
+    no_sleep.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_post_multipart_still_retries_timeouts_three_times(http_client, no_sleep):
+    import asyncio
+
+    from oepl.exceptions import OEPLTimeoutError
+
+    with aioresponses() as m:
+        m.post(f"{BASE}/imgupload", exception=asyncio.TimeoutError(), repeat=True)
+        with pytest.raises(OEPLTimeoutError):
+            await http_client.post_multipart("imgupload", {"mac": "DEADBEEF"})
+    assert [c.args[0] for c in no_sleep.await_args_list] == [2, 4]
