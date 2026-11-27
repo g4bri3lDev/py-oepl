@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.2](https://github.com/g4bri3lDev/py-oepl/compare/v1.0.1...v1.0.2) (2026-11-27)
+
+
+### Bug Fixes
+
+* decode two-plane images as a colour table index, like the AP web UI ([35c821a](https://github.com/g4bri3lDev/py-oepl/commit/35c821aed19823d76fb6d3264653b95587606280))
+* don't fail reboot_ap when the AP restarts before answering ([38bbb5d](https://github.com/g4bri3lDev/py-oepl/commit/38bbb5d37c5b38423ec23899546460d90ff764c6))
+* retry an image upload when the AP answers 409 ([39c7404](https://github.com/g4bri3lDev/py-oepl/commit/39c7404387c5cb8d00dc7efbde155be86a9e7eec))
+
 ## [1.0.1](https://github.com/g4bri3lDev/py-oepl/compare/v1.0.0...v1.0.1) (2026-11-25)
 
 
