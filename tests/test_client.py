@@ -1110,3 +1110,33 @@ def test_an_incompatible_epaper_dithering_is_not_mistaken_for_a_missing_one(monk
     finally:
         monkeypatch.undo()
         importlib.reload(oepl.client)
+
+
+# ---------------------------------------------------------------------------
+# reboot_ap
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reboot_ap_answered(client):
+    with aioresponses() as m:
+        m.post(f"{BASE}/reboot", status=200, body="OK Reboot")
+        await client.reboot_ap()
+
+
+@pytest.mark.asyncio
+async def test_reboot_ap_restarting_before_answering_is_accepted(client):
+    """The AP often restarts before it sends "OK Reboot"."""
+    with aioresponses() as m:
+        m.post(f"{BASE}/reboot", exception=aiohttp.SocketTimeoutError())
+        await client.reboot_ap()
+
+
+@pytest.mark.asyncio
+async def test_reboot_ap_offline_raises(client):
+    from oepl.exceptions import OEPLConnectionError
+
+    with aioresponses() as m:
+        m.post(f"{BASE}/reboot", exception=aiohttp.ConnectionTimeoutError())
+        with pytest.raises(OEPLConnectionError):
+            await client.reboot_ap()

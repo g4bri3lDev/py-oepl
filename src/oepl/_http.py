@@ -89,6 +89,10 @@ class _HTTPClient:
         session = self._session_provider()
         try:
             resp = await session.request(method, self._url(path), timeout=timeout, **kwargs)
+        except aiohttp.SocketTimeoutError as exc:
+            # Connected and sent, then no answer within sock_read. Also a
+            # ClientError, so it has to come first.
+            raise OEPLTimeoutError(f"Request to {path} timed out") from exc
         except aiohttp.ClientError as exc:
             raise OEPLConnectionError(str(exc)) from exc
         except asyncio.TimeoutError as exc:
