@@ -153,8 +153,17 @@ def _bitmap_to_image(data: bytes, tag_type: TagType) -> Image.Image:
         bytes_per_row = (native_width + 7) // 8
         bytes_per_plane = bytes_per_row * native_height
 
-        black_plane = data[:bytes_per_plane]
-        color_plane = data[bytes_per_plane : bytes_per_plane * 2] if tag_type.bpp == 2 else None
+        first_plane = data[:bytes_per_plane]
+        second_plane = data[bytes_per_plane : bytes_per_plane * 2] if tag_type.bpp == 2 else None
+
+        # Like the AP's web UI, the planes form an index into the colour table:
+        # first plane bit 0, second plane bit 1. Picking colours by name instead
+        # showed a BWRY panel's yellow as black, and got every colour wrong for
+        # a table that does not start with white, black. Both bits set on a
+        # three colour panel has no colour of its own and shows as index 1,
+        # which is what it showed before.
+        colors = list(color_table.values())
+        palette = [colors[i] if i < len(colors) else colors[min(1, len(colors) - 1)] for i in range(4)]
 
         for y in range(native_height):
             row_offset = y * bytes_per_row
@@ -162,16 +171,10 @@ def _bitmap_to_image(data: bytes, tag_type: TagType) -> Image.Image:
                 byte_offset = row_offset + (x // 8)
                 bit_mask = 0x80 >> (x % 8)
 
-                black = bool(black_plane[byte_offset] & bit_mask)
-                color = bool(color_plane[byte_offset] & bit_mask) if color_plane else False
-
-                if black:
-                    pixels[x, y] = color_table["black"]
-                elif color:
-                    color_key = next((k for k in color_table if k not in ("black", "white")), "white")
-                    pixels[x, y] = color_table[color_key]
-                else:
-                    pixels[x, y] = color_table["white"]
+                index = 1 if first_plane[byte_offset] & bit_mask else 0
+                if second_plane and second_plane[byte_offset] & bit_mask:
+                    index |= 2
+                pixels[x, y] = palette[index]
     else:
         bits_per_pixel = _packed_bits_per_pixel(tag_type.bpp)
         bit_mask = (1 << bits_per_pixel) - 1
